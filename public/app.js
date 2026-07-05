@@ -10,16 +10,16 @@ const serverStatus = document.getElementById("serverStatus");
 const studentList = document.getElementById("studentList");
 
 const students = [
-  { id: "stu-01", name: "김민준", group: "초등부" },
-  { id: "stu-02", name: "이서연", group: "품새반" },
-  { id: "stu-03", name: "박지호", group: "겨루기반" },
-  { id: "stu-04", name: "최하은", group: "유치부" },
-  { id: "stu-05", name: "정도윤", group: "중등부" },
-  { id: "stu-06", name: "한예린", group: "선수반" }
+  { id: "student-01", name: "김민준", group: "초등부" },
+  { id: "student-02", name: "이서연", group: "품새반" },
+  { id: "student-03", name: "박지호", group: "겨루기반" },
+  { id: "student-04", name: "최하은", group: "유치부" },
+  { id: "student-05", name: "정도윤", group: "중등부" },
+  { id: "student-06", name: "한예린", group: "선수반" }
 ];
 
 let selectedPhotos = [];
-let selectedStudentIds = new Set();
+const selectedStudentIds = new Set();
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => ({
@@ -47,8 +47,8 @@ function updateGenerateState() {
   const ready = selectedPhotos.length > 0;
   generateButton.disabled = !ready;
   message.textContent = ready
-    ? "STEP 1 UI 준비가 완료되었습니다. 실제 MP4 생성은 STEP 2에서 연결됩니다."
-    : "사진을 선택하면 STEP 2에서 연결할 생성 버튼 UI를 확인할 수 있습니다.";
+    ? "STEP 1 UI 준비가 완료되었습니다. 실제 MP4 생성은 STEP 2에서 연결합니다."
+    : "사진을 선택하면 STEP 2에서 연결할 MP4 생성 버튼 UI를 확인할 수 있습니다.";
 }
 
 function renderStudents() {
@@ -58,8 +58,8 @@ function renderStudents() {
       <label class="student-option">
         <input type="checkbox" value="${student.id}" ${checked}>
         <span>
-          <strong>${student.name}</strong>
-          <small>${student.group}</small>
+          <strong>${escapeHtml(student.name)}</strong>
+          <small>${escapeHtml(student.group)}</small>
         </span>
       </label>
     `;
@@ -72,13 +72,13 @@ function renderPhotos() {
   photoSize.textContent = selectedPhotos.length ? `총 ${formatBytes(totalSize)}` : "선택된 파일 없음";
 
   if (!selectedPhotos.length) {
-    photoList.innerHTML = `<div class="empty-state">업로드한 사진이 여기에 표시됩니다.</div>`;
+    photoList.innerHTML = `<div class="empty-state">업로드한 사진 썸네일이 여기에 표시됩니다.</div>`;
     updateGenerateState();
     return;
   }
 
   photoList.innerHTML = selectedPhotos.map((item, index) => `
-    <article class="photo-row" data-id="${item.id}">
+    <article class="photo-row" data-id="${escapeHtml(item.id)}">
       <img src="${item.url}" alt="">
       <div class="photo-meta">
         <strong>${index + 1}. ${escapeHtml(item.file.name)}</strong>
@@ -120,6 +120,7 @@ photoInput.addEventListener("change", () => {
 photoList.addEventListener("click", event => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
+
   const index = Number(button.dataset.index);
   const action = button.dataset.action;
 
@@ -145,7 +146,7 @@ bgmInput.addEventListener("change", () => {
 
 generateButton.addEventListener("click", () => {
   if (!selectedPhotos.length) return;
-  message.textContent = "STEP 1 완료: MP4 생성 버튼 UI만 준비되었습니다. FFmpeg 연결은 STEP 2에서 진행합니다.";
+  message.textContent = "STEP 1 완료: MP4 생성 버튼은 배치만 했습니다. FFmpeg와 실제 다운로드는 STEP 2에서 연결합니다.";
 });
 
 fetch("/health")
