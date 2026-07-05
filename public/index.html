@@ -10,17 +10,17 @@
   <main class="studio-shell">
     <section class="hero">
       <div>
-        <p class="eyebrow">STEP 2 - Photo Manager</p>
+        <p class="eyebrow">STEP 3 - Student Tagging</p>
         <h1>Highlight Studio</h1>
-        <p>&#49324;&#51652;&#51012; &#50629;&#47196;&#46300;&#54616;&#44256; &#50689;&#49345; &#51228;&#51089; &#51204;&#50640; &#49692;&#49436;, &#49440;&#53469;, &#48120;&#47532;&#48372;&#44592;&#47484; &#44288;&#47532;&#54633;&#45768;&#45796;.</p>
+        <p>&#49324;&#51652;&#51012; &#50629;&#47196;&#46300;&#54616;&#44256; &#54617;&#49373;&#48324;&#47196; &#49688;&#46041; &#53468;&#44557;&#54644; &#50689;&#49345; &#51228;&#51089; &#45824;&#49345;&#51012; &#51456;&#48708;&#54633;&#45768;&#45796;.</p>
       </div>
       <div class="status-pill" id="serverStatus">localhost:4000</div>
     </section>
 
     <section class="workflow" aria-label="workflow">
       <div class="step"><strong>1</strong><span>&#51228;&#51089; &#51456;&#48708;</span></div>
-      <div class="step is-active"><strong>2</strong><span>&#49324;&#51652; &#44288;&#47532;</span></div>
-      <div class="step"><strong>3</strong><span>MP4 &#49373;&#49457;</span></div>
+      <div class="step"><strong>2</strong><span>&#49324;&#51652; &#44288;&#47532;</span></div>
+      <div class="step is-active"><strong>3</strong><span>&#54617;&#49373; &#53468;&#44557;</span></div>
     </section>
 
     <section class="studio-grid photo-workspace">
@@ -69,6 +69,37 @@
       </aside>
     </section>
 
+    <section class="panel tagging-panel">
+      <div class="panel-head">
+        <div>
+          <h2>&#54617;&#49373; &#53468;&#44557;</h2>
+          <p>&#54617;&#49373;&#51012; &#52628;&#44032;&#54616;&#44256; &#49324;&#51652; &#49444;&#47749;&#50640;&#49436; &#49688;&#46041;&#51004;&#47196; &#50668;&#47084; &#54617;&#49373;&#51012; &#53468;&#44557;&#54633;&#45768;&#45796;.</p>
+        </div>
+      </div>
+      <div class="tagging-grid">
+        <div>
+          <label>Student name
+            <input id="studentNameInput" type="text" placeholder="Student name">
+          </label>
+          <button id="addStudentButton" class="secondary-button" type="button">Add student</button>
+          <div id="studentList" class="student-list"></div>
+        </div>
+        <div>
+          <label>Photo filter
+            <select id="tagFilter">
+              <option value="all">All photos</option>
+              <option value="untagged">Untagged photos</option>
+            </select>
+          </label>
+          <div id="studentPrepSummary" class="student-prep-summary">
+            <strong>All photos</strong>
+            <span>0 photos / 0s</span>
+          </div>
+          <button id="selectStudentPhotosButton" class="secondary-button" type="button" disabled>Select current filter photos</button>
+        </div>
+      </div>
+    </section>
+
     <section class="panel settings-panel">
       <div class="panel-head">
         <div>
@@ -110,7 +141,7 @@
     <section class="panel action-panel">
       <div>
         <h2>MP4 &#49373;&#49457; &#51456;&#48708;</h2>
-        <p id="message">STEP 2 handles photo management only. Real MP4 generation starts in STEP 3.</p>
+        <p id="message">STEP 3 handles manual student tagging only. Real MP4 generation starts in STEP 4.</p>
       </div>
       <button id="generateButton" class="primary-button" type="button" disabled>MP4 &#49373;&#49457;</button>
     </section>
