@@ -1,14 +1,35 @@
-﻿const photoInput = document.getElementById("photoInput");
-const previewGrid = document.getElementById("previewGrid");
+const photoInput = document.getElementById("photoInput");
+const photoList = document.getElementById("photoList");
 const photoCount = document.getElementById("photoCount");
 const photoSize = document.getElementById("photoSize");
 const generateButton = document.getElementById("generateButton");
-const downloadButton = document.getElementById("downloadButton");
 const message = document.getElementById("message");
-const titleInput = document.getElementById("titleInput");
-const secondsInput = document.getElementById("secondsInput");
+const bgmInput = document.getElementById("bgmInput");
+const bgmName = document.getElementById("bgmName");
 const serverStatus = document.getElementById("serverStatus");
-let selectedFiles = [];
+const studentList = document.getElementById("studentList");
+
+const students = [
+  { id: "stu-01", name: "김민준", group: "초등부" },
+  { id: "stu-02", name: "이서연", group: "품새반" },
+  { id: "stu-03", name: "박지호", group: "겨루기반" },
+  { id: "stu-04", name: "최하은", group: "유치부" },
+  { id: "stu-05", name: "정도윤", group: "중등부" },
+  { id: "stu-06", name: "한예린", group: "선수반" }
+];
+
+let selectedPhotos = [];
+let selectedStudentIds = new Set();
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  }[char]));
+}
 
 function formatBytes(value) {
   if (!value) return "0 B";
@@ -22,54 +43,115 @@ function formatBytes(value) {
   return `${size.toFixed(unit ? 1 : 0)} ${units[unit]}`;
 }
 
-function renderPreview() {
-  const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
-  photoCount.textContent = `사진 ${selectedFiles.length}장`;
-  photoSize.textContent = selectedFiles.length ? `총 ${formatBytes(totalSize)}` : "선택된 파일 없음";
-  generateButton.disabled = selectedFiles.length < 1;
-  previewGrid.innerHTML = selectedFiles.map(file => {
-    const url = URL.createObjectURL(file);
-    return `<article class="preview-card"><img src="${url}" alt=""><span>${file.name}</span></article>`;
+function updateGenerateState() {
+  const ready = selectedPhotos.length > 0;
+  generateButton.disabled = !ready;
+  message.textContent = ready
+    ? "STEP 1 UI 준비가 완료되었습니다. 실제 MP4 생성은 STEP 2에서 연결됩니다."
+    : "사진을 선택하면 STEP 2에서 연결할 생성 버튼 UI를 확인할 수 있습니다.";
+}
+
+function renderStudents() {
+  studentList.innerHTML = students.map(student => {
+    const checked = selectedStudentIds.has(student.id) ? "checked" : "";
+    return `
+      <label class="student-option">
+        <input type="checkbox" value="${student.id}" ${checked}>
+        <span>
+          <strong>${student.name}</strong>
+          <small>${student.group}</small>
+        </span>
+      </label>
+    `;
   }).join("");
-  message.textContent = selectedFiles.length ? "영상 생성 버튼을 누르면 MP4를 만듭니다." : "사진을 선택하면 MP4 생성을 시작할 수 있습니다.";
-  downloadButton.classList.add("is-hidden");
+}
+
+function renderPhotos() {
+  const totalSize = selectedPhotos.reduce((sum, item) => sum + item.file.size, 0);
+  photoCount.textContent = `사진 ${selectedPhotos.length}장`;
+  photoSize.textContent = selectedPhotos.length ? `총 ${formatBytes(totalSize)}` : "선택된 파일 없음";
+
+  if (!selectedPhotos.length) {
+    photoList.innerHTML = `<div class="empty-state">업로드한 사진이 여기에 표시됩니다.</div>`;
+    updateGenerateState();
+    return;
+  }
+
+  photoList.innerHTML = selectedPhotos.map((item, index) => `
+    <article class="photo-row" data-id="${item.id}">
+      <img src="${item.url}" alt="">
+      <div class="photo-meta">
+        <strong>${index + 1}. ${escapeHtml(item.file.name)}</strong>
+        <span>${formatBytes(item.file.size)}</span>
+      </div>
+      <div class="row-actions" aria-label="사진 순서 변경">
+        <button type="button" data-action="up" data-index="${index}" ${index === 0 ? "disabled" : ""}>위</button>
+        <button type="button" data-action="down" data-index="${index}" ${index === selectedPhotos.length - 1 ? "disabled" : ""}>아래</button>
+        <button type="button" data-action="remove" data-index="${index}">삭제</button>
+      </div>
+    </article>
+  `).join("");
+
+  updateGenerateState();
+}
+
+function addPhotos(files) {
+  selectedPhotos.forEach(item => URL.revokeObjectURL(item.url));
+  selectedPhotos = files.map((file, index) => ({
+    id: `${file.name}-${file.lastModified}-${index}`,
+    file,
+    url: URL.createObjectURL(file)
+  }));
+  renderPhotos();
+}
+
+function movePhoto(fromIndex, toIndex) {
+  const nextPhotos = [...selectedPhotos];
+  const [item] = nextPhotos.splice(fromIndex, 1);
+  nextPhotos.splice(toIndex, 0, item);
+  selectedPhotos = nextPhotos;
+  renderPhotos();
 }
 
 photoInput.addEventListener("change", () => {
-  selectedFiles = Array.from(photoInput.files || []);
-  renderPreview();
+  addPhotos(Array.from(photoInput.files || []));
 });
 
-generateButton.addEventListener("click", async () => {
-  if (!selectedFiles.length) return;
-  generateButton.disabled = true;
-  downloadButton.classList.add("is-hidden");
-  message.textContent = "사진을 업로드하고 MP4를 생성하는 중입니다.";
+photoList.addEventListener("click", event => {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const index = Number(button.dataset.index);
+  const action = button.dataset.action;
 
-  const form = new FormData();
-  form.append("title", titleInput.value || "Highlight Studio");
-  form.append("secondsPerPhoto", secondsInput.value || "2");
-  selectedFiles.forEach(file => form.append("photos", file));
-
-  try {
-    const response = await fetch("/api/videos", { method: "POST", body: form });
-    const text = await response.text();
-    let data = {};
-    try { data = text ? JSON.parse(text) : {}; } catch (_) {}
-    if (!response.ok || data.ok === false) throw new Error(data.error || text || `HTTP ${response.status}`);
-    message.textContent = `완료: ${data.video.photoCount}장, ${data.video.durationSeconds}초 영상이 생성되었습니다.`;
-    downloadButton.href = data.video.downloadUrl;
-    downloadButton.download = data.video.filename;
-    downloadButton.classList.remove("is-hidden");
-  } catch (error) {
-    console.error("[Highlight Studio] generate failed", error);
-    message.textContent = error.message || "영상 생성에 실패했습니다.";
-  } finally {
-    generateButton.disabled = selectedFiles.length < 1;
+  if (action === "up" && index > 0) movePhoto(index, index - 1);
+  if (action === "down" && index < selectedPhotos.length - 1) movePhoto(index, index + 1);
+  if (action === "remove") {
+    URL.revokeObjectURL(selectedPhotos[index].url);
+    selectedPhotos.splice(index, 1);
+    renderPhotos();
   }
+});
+
+studentList.addEventListener("change", event => {
+  if (!event.target.matches("input[type='checkbox']")) return;
+  if (event.target.checked) selectedStudentIds.add(event.target.value);
+  else selectedStudentIds.delete(event.target.value);
+});
+
+bgmInput.addEventListener("change", () => {
+  const file = bgmInput.files && bgmInput.files[0];
+  bgmName.textContent = file ? `${file.name} - ${formatBytes(file.size)}` : "선택된 BGM 없음";
+});
+
+generateButton.addEventListener("click", () => {
+  if (!selectedPhotos.length) return;
+  message.textContent = "STEP 1 완료: MP4 생성 버튼 UI만 준비되었습니다. FFmpeg 연결은 STEP 2에서 진행합니다.";
 });
 
 fetch("/health")
   .then(res => res.json())
   .then(data => { serverStatus.textContent = data.app ? `localhost:${data.port}` : "localhost:4000"; })
   .catch(() => { serverStatus.textContent = "localhost:4000"; });
+
+renderStudents();
+renderPhotos();
