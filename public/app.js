@@ -1,25 +1,26 @@
 const photoInput = document.getElementById("photoInput");
+const dropZone = document.getElementById("dropZone");
 const photoList = document.getElementById("photoList");
 const photoCount = document.getElementById("photoCount");
 const photoSize = document.getElementById("photoSize");
+const selectedCount = document.getElementById("selectedCount");
+const estimatedDuration = document.getElementById("estimatedDuration");
+const secondsInput = document.getElementById("secondsInput");
+const selectAllButton = document.getElementById("selectAllButton");
+const clearSelectionButton = document.getElementById("clearSelectionButton");
+const clearAllButton = document.getElementById("clearAllButton");
+const largePreview = document.getElementById("largePreview");
+const prevPreviewButton = document.getElementById("prevPreviewButton");
+const nextPreviewButton = document.getElementById("nextPreviewButton");
 const generateButton = document.getElementById("generateButton");
 const message = document.getElementById("message");
-const bgmInput = document.getElementById("bgmInput");
-const bgmName = document.getElementById("bgmName");
 const serverStatus = document.getElementById("serverStatus");
-const studentList = document.getElementById("studentList");
 
-const students = [
-  { id: "student-01", name: "김민준", group: "초등부" },
-  { id: "student-02", name: "이서연", group: "품새반" },
-  { id: "student-03", name: "박지호", group: "겨루기반" },
-  { id: "student-04", name: "최하은", group: "유치부" },
-  { id: "student-05", name: "정도윤", group: "중등부" },
-  { id: "student-06", name: "한예린", group: "선수반" }
-];
-
-let selectedPhotos = [];
-const selectedStudentIds = new Set();
+const supportedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+let photos = [];
+let selectedPhotoIds = new Set();
+let activePreviewId = null;
+let draggedPhotoId = null;
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => ({
@@ -43,110 +44,273 @@ function formatBytes(value) {
   return `${size.toFixed(unit ? 1 : 0)} ${units[unit]}`;
 }
 
-function updateGenerateState() {
-  const ready = selectedPhotos.length > 0;
-  generateButton.disabled = !ready;
-  message.textContent = ready
-    ? "STEP 1 UI 준비가 완료되었습니다. 실제 MP4 생성은 STEP 2에서 연결합니다."
-    : "사진을 선택하면 STEP 2에서 연결할 MP4 생성 버튼 UI를 확인할 수 있습니다.";
+function formatDuration(seconds) {
+  const total = Math.max(0, Number(seconds) || 0);
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return minutes ? `${minutes}m ${rest}s` : `${rest}s`;
 }
 
-function renderStudents() {
-  studentList.innerHTML = students.map(student => {
-    const checked = selectedStudentIds.has(student.id) ? "checked" : "";
-    return `
-      <label class="student-option">
-        <input type="checkbox" value="${student.id}" ${checked}>
-        <span>
-          <strong>${escapeHtml(student.name)}</strong>
-          <small>${escapeHtml(student.group)}</small>
-        </span>
-      </label>
-    `;
-  }).join("");
+function getImageSize(url) {
+  return new Promise(resolve => {
+    const image = new Image();
+    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => resolve({ width: 0, height: 0 });
+    image.src = url;
+  });
 }
 
-function renderPhotos() {
-  const totalSize = selectedPhotos.reduce((sum, item) => sum + item.file.size, 0);
-  photoCount.textContent = `사진 ${selectedPhotos.length}장`;
-  photoSize.textContent = selectedPhotos.length ? `총 ${formatBytes(totalSize)}` : "선택된 파일 없음";
+function updateStats() {
+  const totalSize = photos.reduce((sum, photo) => sum + photo.file.size, 0);
+  const secondsPerPhoto = Number(secondsInput.value || 2);
+  photoCount.textContent = `${photos.length} photos`;
+  photoSize.textContent = formatBytes(totalSize);
+  selectedCount.textContent = `${selectedPhotoIds.size} selected`;
+  estimatedDuration.textContent = formatDuration(photos.length * secondsPerPhoto);
+  generateButton.disabled = photos.length === 0;
+}
 
-  if (!selectedPhotos.length) {
-    photoList.innerHTML = `<div class="empty-state">업로드한 사진 썸네일이 여기에 표시됩니다.</div>`;
-    updateGenerateState();
+function setMessage(text) {
+  message.textContent = text;
+}
+
+function renderList() {
+  if (!photos.length) {
+    photoList.innerHTML = `<div class="empty-state">Uploaded thumbnails will appear here.</div>`;
+    activePreviewId = null;
+    renderPreview();
+    updateStats();
     return;
   }
 
-  photoList.innerHTML = selectedPhotos.map((item, index) => `
-    <article class="photo-row" data-id="${escapeHtml(item.id)}">
-      <img src="${item.url}" alt="">
-      <div class="photo-meta">
-        <strong>${index + 1}. ${escapeHtml(item.file.name)}</strong>
-        <span>${formatBytes(item.file.size)}</span>
-      </div>
-      <div class="row-actions" aria-label="사진 순서 변경">
-        <button type="button" data-action="up" data-index="${index}" ${index === 0 ? "disabled" : ""}>위</button>
-        <button type="button" data-action="down" data-index="${index}" ${index === selectedPhotos.length - 1 ? "disabled" : ""}>아래</button>
-        <button type="button" data-action="remove" data-index="${index}">삭제</button>
-      </div>
-    </article>
-  `).join("");
+  photoList.innerHTML = photos.map((photo, index) => {
+    const isSelected = selectedPhotoIds.has(photo.id) ? "checked" : "";
+    const isActive = photo.id === activePreviewId ? " is-active" : "";
+    const resolution = photo.width && photo.height ? `${photo.width} x ${photo.height}` : "Reading size";
+    return `
+      <article class="photo-row${isActive}" draggable="true" data-id="${escapeHtml(photo.id)}">
+        <label class="select-cell">
+          <input type="checkbox" data-action="select" data-id="${escapeHtml(photo.id)}" ${isSelected}>
+        </label>
+        <button class="thumb-button" type="button" data-action="preview" data-id="${escapeHtml(photo.id)}">
+          <img src="${photo.url}" alt="">
+        </button>
+        <div class="photo-meta">
+          <strong>${index + 1}. ${escapeHtml(photo.file.name)}</strong>
+          <span>${resolution}</span>
+          <span>${formatBytes(photo.file.size)}</span>
+        </div>
+        <div class="row-actions">
+          <button type="button" data-action="up" data-id="${escapeHtml(photo.id)}" ${index === 0 ? "disabled" : ""}>Up</button>
+          <button type="button" data-action="down" data-id="${escapeHtml(photo.id)}" ${index === photos.length - 1 ? "disabled" : ""}>Down</button>
+          <button type="button" data-action="remove" data-id="${escapeHtml(photo.id)}">Delete</button>
+        </div>
+      </article>
+    `;
+  }).join("");
 
-  updateGenerateState();
+  if (!activePreviewId || !photos.some(photo => photo.id === activePreviewId)) {
+    activePreviewId = photos[0].id;
+  }
+  renderPreview();
+  updateStats();
 }
 
-function addPhotos(files) {
-  selectedPhotos.forEach(item => URL.revokeObjectURL(item.url));
-  selectedPhotos = files.map((file, index) => ({
-    id: `${file.name}-${file.lastModified}-${index}`,
-    file,
-    url: URL.createObjectURL(file)
+function renderPreview() {
+  const activeIndex = photos.findIndex(photo => photo.id === activePreviewId);
+  const activePhoto = photos[activeIndex];
+
+  if (!activePhoto) {
+    largePreview.innerHTML = `<div class="empty-state">Select a photo to preview it here.</div>`;
+    prevPreviewButton.disabled = true;
+    nextPreviewButton.disabled = true;
+    return;
+  }
+
+  const resolution = activePhoto.width && activePhoto.height ? `${activePhoto.width} x ${activePhoto.height}` : "Reading size";
+  largePreview.innerHTML = `
+    <img src="${activePhoto.url}" alt="">
+    <div class="preview-caption">
+      <strong>${escapeHtml(activePhoto.file.name)}</strong>
+      <span>${activeIndex + 1} / ${photos.length} - ${resolution} - ${formatBytes(activePhoto.file.size)}</span>
+    </div>
+  `;
+  prevPreviewButton.disabled = activeIndex <= 0;
+  nextPreviewButton.disabled = activeIndex >= photos.length - 1;
+}
+
+async function addFiles(fileList) {
+  const files = Array.from(fileList || []).filter(file => supportedTypes.has(file.type));
+  if (!files.length) {
+    setMessage("Only JPG, PNG, and WEBP photos are supported.");
+    return;
+  }
+
+  const nextPhotos = await Promise.all(files.map(async (file, index) => {
+    const url = URL.createObjectURL(file);
+    const size = await getImageSize(url);
+    return {
+      id: `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+      file,
+      url,
+      width: size.width,
+      height: size.height
+    };
   }));
-  renderPhotos();
+
+  photos = [...photos, ...nextPhotos];
+  if (!activePreviewId && photos.length) activePreviewId = photos[0].id;
+  setMessage("Photos added in browser memory. Nothing was uploaded to the server.");
+  renderList();
 }
 
-function movePhoto(fromIndex, toIndex) {
-  const nextPhotos = [...selectedPhotos];
-  const [item] = nextPhotos.splice(fromIndex, 1);
-  nextPhotos.splice(toIndex, 0, item);
-  selectedPhotos = nextPhotos;
-  renderPhotos();
+function findIndexById(id) {
+  return photos.findIndex(photo => photo.id === id);
+}
+
+function movePhoto(id, direction) {
+  const fromIndex = findIndexById(id);
+  const toIndex = fromIndex + direction;
+  if (fromIndex < 0 || toIndex < 0 || toIndex >= photos.length) return;
+  const next = [...photos];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  photos = next;
+  activePreviewId = id;
+  renderList();
+}
+
+function movePhotoTo(id, targetId) {
+  if (!id || !targetId || id === targetId) return;
+  const fromIndex = findIndexById(id);
+  const toIndex = findIndexById(targetId);
+  if (fromIndex < 0 || toIndex < 0) return;
+  const next = [...photos];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  photos = next;
+  activePreviewId = id;
+  renderList();
+}
+
+function removePhoto(id) {
+  const photo = photos.find(item => item.id === id);
+  if (photo) URL.revokeObjectURL(photo.url);
+  photos = photos.filter(item => item.id !== id);
+  selectedPhotoIds.delete(id);
+  if (activePreviewId === id) activePreviewId = photos[0]?.id || null;
+  renderList();
+}
+
+function clearAllPhotos() {
+  photos.forEach(photo => URL.revokeObjectURL(photo.url));
+  photos = [];
+  selectedPhotoIds = new Set();
+  activePreviewId = null;
+  setMessage("All photos were removed from browser memory.");
+  renderList();
 }
 
 photoInput.addEventListener("change", () => {
-  addPhotos(Array.from(photoInput.files || []));
+  addFiles(photoInput.files);
+  photoInput.value = "";
+});
+
+["dragenter", "dragover"].forEach(eventName => {
+  dropZone.addEventListener(eventName, event => {
+    event.preventDefault();
+    dropZone.classList.add("is-dragging");
+  });
+});
+
+["dragleave", "drop"].forEach(eventName => {
+  dropZone.addEventListener(eventName, event => {
+    event.preventDefault();
+    dropZone.classList.remove("is-dragging");
+  });
+});
+
+dropZone.addEventListener("drop", event => {
+  addFiles(event.dataTransfer.files);
 });
 
 photoList.addEventListener("click", event => {
-  const button = event.target.closest("button[data-action]");
-  if (!button) return;
+  const target = event.target.closest("[data-action]");
+  if (!target) return;
+  const id = target.dataset.id;
+  const action = target.dataset.action;
 
-  const index = Number(button.dataset.index);
-  const action = button.dataset.action;
+  if (action === "preview") {
+    activePreviewId = id;
+    renderList();
+  }
+  if (action === "up") movePhoto(id, -1);
+  if (action === "down") movePhoto(id, 1);
+  if (action === "remove") removePhoto(id);
+});
 
-  if (action === "up" && index > 0) movePhoto(index, index - 1);
-  if (action === "down" && index < selectedPhotos.length - 1) movePhoto(index, index + 1);
-  if (action === "remove") {
-    URL.revokeObjectURL(selectedPhotos[index].url);
-    selectedPhotos.splice(index, 1);
-    renderPhotos();
+photoList.addEventListener("change", event => {
+  if (!event.target.matches("input[data-action='select']")) return;
+  const id = event.target.dataset.id;
+  if (event.target.checked) selectedPhotoIds.add(id);
+  else selectedPhotoIds.delete(id);
+  updateStats();
+});
+
+photoList.addEventListener("dragstart", event => {
+  const row = event.target.closest(".photo-row");
+  if (!row) return;
+  draggedPhotoId = row.dataset.id;
+  row.classList.add("is-dragging");
+});
+
+photoList.addEventListener("dragend", event => {
+  event.target.closest(".photo-row")?.classList.remove("is-dragging");
+  draggedPhotoId = null;
+});
+
+photoList.addEventListener("dragover", event => {
+  if (event.target.closest(".photo-row")) event.preventDefault();
+});
+
+photoList.addEventListener("drop", event => {
+  event.preventDefault();
+  const row = event.target.closest(".photo-row");
+  if (row) movePhotoTo(draggedPhotoId, row.dataset.id);
+});
+
+selectAllButton.addEventListener("click", () => {
+  selectedPhotoIds = new Set(photos.map(photo => photo.id));
+  renderList();
+});
+
+clearSelectionButton.addEventListener("click", () => {
+  selectedPhotoIds = new Set();
+  renderList();
+});
+
+clearAllButton.addEventListener("click", clearAllPhotos);
+
+secondsInput.addEventListener("change", updateStats);
+
+prevPreviewButton.addEventListener("click", () => {
+  const index = findIndexById(activePreviewId);
+  if (index > 0) {
+    activePreviewId = photos[index - 1].id;
+    renderList();
   }
 });
 
-studentList.addEventListener("change", event => {
-  if (!event.target.matches("input[type='checkbox']")) return;
-  if (event.target.checked) selectedStudentIds.add(event.target.value);
-  else selectedStudentIds.delete(event.target.value);
-});
-
-bgmInput.addEventListener("change", () => {
-  const file = bgmInput.files && bgmInput.files[0];
-  bgmName.textContent = file ? `${file.name} - ${formatBytes(file.size)}` : "선택된 BGM 없음";
+nextPreviewButton.addEventListener("click", () => {
+  const index = findIndexById(activePreviewId);
+  if (index >= 0 && index < photos.length - 1) {
+    activePreviewId = photos[index + 1].id;
+    renderList();
+  }
 });
 
 generateButton.addEventListener("click", () => {
-  if (!selectedPhotos.length) return;
-  message.textContent = "STEP 1 완료: MP4 생성 버튼은 배치만 했습니다. FFmpeg와 실제 다운로드는 STEP 2에서 연결합니다.";
+  setMessage("STEP 2 complete: photo management is ready. MP4 generation stays disabled until STEP 3.");
 });
 
 fetch("/health")
@@ -154,5 +318,4 @@ fetch("/health")
   .then(data => { serverStatus.textContent = data.app ? `localhost:${data.port}` : "localhost:4000"; })
   .catch(() => { serverStatus.textContent = "localhost:4000"; });
 
-renderStudents();
-renderPhotos();
+renderList();

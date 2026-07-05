@@ -10,125 +10,109 @@
   <main class="studio-shell">
     <section class="hero">
       <div>
-        <p class="eyebrow">STEP 1 - Production Desk</p>
+        <p class="eyebrow">STEP 2 - Photo Manager</p>
         <h1>Highlight Studio</h1>
-        <p>사진과 학생, 템플릿, 전환효과, BGM, 자막을 MP4 생성 전에 준비하는 작업 화면입니다.</p>
+        <p>&#49324;&#51652;&#51012; &#50629;&#47196;&#46300;&#54616;&#44256; &#50689;&#49345; &#51228;&#51089; &#51204;&#50640; &#49692;&#49436;, &#49440;&#53469;, &#48120;&#47532;&#48372;&#44592;&#47484; &#44288;&#47532;&#54633;&#45768;&#45796;.</p>
       </div>
       <div class="status-pill" id="serverStatus">localhost:4000</div>
     </section>
 
-    <section class="workflow" aria-label="영상 제작 단계">
-      <div class="step is-active"><strong>1</strong><span>제작 준비</span></div>
-      <div class="step"><strong>2</strong><span>FFmpeg 연결</span></div>
-      <div class="step"><strong>3</strong><span>MP4 출력</span></div>
+    <section class="workflow" aria-label="workflow">
+      <div class="step"><strong>1</strong><span>&#51228;&#51089; &#51456;&#48708;</span></div>
+      <div class="step is-active"><strong>2</strong><span>&#49324;&#51652; &#44288;&#47532;</span></div>
+      <div class="step"><strong>3</strong><span>MP4 &#49373;&#49457;</span></div>
     </section>
 
-    <section class="studio-grid">
+    <section class="studio-grid photo-workspace">
       <section class="panel upload-panel">
         <div class="panel-head">
           <div>
-            <h2>사진 업로드</h2>
-            <p>JPG, PNG, WEBP 사진을 선택하면 썸네일 목록과 순서 변경 UI가 표시됩니다.</p>
+            <h2>&#49324;&#51652; &#50629;&#47196;&#46300;</h2>
+            <p>JPG, PNG, WEBP &#54028;&#51068;&#51012; &#49440;&#53469;&#54616;&#44144;&#45208; &#46300;&#47000;&#44536; &#50532; &#46300;&#47213;&#51004;&#47196; &#52628;&#44032;&#54616;&#49464;&#50836;.</p>
           </div>
           <label class="file-button">
-            사진 선택
+            &#49324;&#51652; &#49440;&#53469;
             <input id="photoInput" type="file" accept="image/jpeg,image/png,image/webp" multiple>
           </label>
         </div>
 
-        <div class="summary-strip">
-          <strong id="photoCount">사진 0장</strong>
-          <span id="photoSize">선택된 파일 없음</span>
+        <div id="dropZone" class="drop-zone">
+          <strong>&#50668;&#44592;&#47196; &#49324;&#51652;&#51012; &#46300;&#47000;&#44536;&#54616;&#49464;&#50836;</strong>
+          <span>JPG, PNG, WEBP &#51648;&#50896; / &#49436;&#48260; &#51200;&#51109; &#50630;&#51060; &#48652;&#46972;&#50864;&#51200; &#47700;&#47784;&#47532;&#50640;&#49436;&#47564; &#52376;&#47532;</span>
         </div>
+
+        <div class="stats-grid">
+          <div><span>&#52509; &#49324;&#51652;</span><strong id="photoCount">0&#51109;</strong></div>
+          <div><span>Estimated Length</span><strong id="estimatedDuration">0s</strong></div>
+          <div><span>Total Size</span><strong id="photoSize">0 B</strong></div>
+          <div><span>&#49440;&#53469;</span><strong id="selectedCount">0&#51109;</strong></div>
+        </div>
+
+        <div class="toolbar">
+          <button id="selectAllButton" type="button">&#51204;&#52404; &#49440;&#53469;</button>
+          <button id="clearSelectionButton" type="button">&#49440;&#53469; &#54644;&#51228;</button>
+          <button id="clearAllButton" type="button">&#51204;&#52404; &#49325;&#51228;</button>
+        </div>
+
         <div id="photoList" class="photo-list" aria-live="polite"></div>
       </section>
 
-      <aside class="panel side-panel">
-        <h2>학생별 선택</h2>
-        <p>영상에 포함할 학생을 체크하는 준비 UI입니다.</p>
-        <div id="studentList" class="student-list"></div>
+      <aside class="panel preview-panel">
+        <h2>&#53356;&#44172; &#48372;&#44592;</h2>
+        <div id="largePreview" class="large-preview">
+          <div class="empty-state">&#49324;&#51652;&#51012; &#49440;&#53469;&#54616;&#47732; &#53356;&#44172; &#48372;&#50668;&#51469;&#45768;&#45796;.</div>
+        </div>
+        <div class="preview-controls">
+          <button id="prevPreviewButton" type="button">&#51060;&#51204;</button>
+          <button id="nextPreviewButton" type="button">&#45796;&#51020;</button>
+        </div>
       </aside>
     </section>
 
     <section class="panel settings-panel">
       <div class="panel-head">
         <div>
-          <h2>제작 옵션</h2>
-          <p>템플릿과 전환효과, 사진당 시간을 STEP 1에서 미리 선택합니다.</p>
+          <h2>&#51228;&#51089; &#50741;&#49496;</h2>
+          <p>&#50500;&#51649; FFmpeg, MP4 &#49373;&#49457;, &#45796;&#50868;&#47196;&#46300;&#45716; &#50672;&#44208;&#54616;&#51648; &#50506;&#50520;&#49845;&#45768;&#45796;.</p>
         </div>
       </div>
-
       <div class="option-grid">
-        <label>영상 제목
-          <input id="titleInput" type="text" value="태권도 하이라이트" maxlength="80">
+        <label>&#50689;&#49345; &#51228;&#47785;
+          <input id="titleInput" type="text" value="Taekwondo Highlight" maxlength="80">
         </label>
-        <label>템플릿
+        <label>Template
           <select id="templateInput">
-            <option value="dynamic">다이내믹 스포츠</option>
-            <option value="clean">클린 포트폴리오</option>
-            <option value="ceremony">시상식 무드</option>
-            <option value="social">SNS 숏폼</option>
+            <option value="dynamic">Dynamic Sports</option>
+            <option value="clean">Clean Portfolio</option>
+            <option value="ceremony">Ceremony Mood</option>
+            <option value="social">SNS Short Form</option>
           </select>
         </label>
-        <label>전환효과
+        <label>Transition
           <select id="transitionInput">
-            <option value="crossfade">부드러운 페이드</option>
-            <option value="slide">슬라이드</option>
-            <option value="zoom">줌 인/아웃</option>
-            <option value="cut">빠른 컷</option>
+            <option value="crossfade">Cross Fade</option>
+            <option value="slide">Slide</option>
+            <option value="zoom">Zoom</option>
+            <option value="cut">Fast Cut</option>
           </select>
         </label>
-        <label>사진당 시간
+        <label>&#49324;&#51652;&#45817; &#49884;&#44036;
           <select id="secondsInput">
-            <option value="1">1초</option>
-            <option value="2" selected>2초</option>
-            <option value="3">3초</option>
-            <option value="4">4초</option>
+            <option value="1">1&#52488;</option>
+            <option value="2" selected>2&#52488;</option>
+            <option value="3">3&#52488;</option>
+            <option value="4">4&#52488;</option>
           </select>
         </label>
       </div>
-    </section>
-
-    <section class="panel captions-panel">
-      <div class="panel-head">
-        <div>
-          <h2>자막 입력</h2>
-          <p>오프닝, 중간, 엔딩 문구를 별도로 준비합니다.</p>
-        </div>
-      </div>
-      <div class="caption-grid">
-        <label>오프닝 자막
-          <textarea id="openingCaptionInput" rows="4" placeholder="예: 오늘의 하이라이트를 시작합니다."></textarea>
-        </label>
-        <label>중간 자막
-          <textarea id="middleCaptionInput" rows="4" placeholder="예: 멋진 발차기와 집중력이 빛났습니다."></textarea>
-        </label>
-        <label>엔딩 자막
-          <textarea id="endingCaptionInput" rows="4" placeholder="예: 모두 수고했습니다. 다음 영상에서 만나요."></textarea>
-        </label>
-      </div>
-    </section>
-
-    <section class="panel media-panel">
-      <div class="panel-head">
-        <div>
-          <h2>BGM 업로드</h2>
-          <p>MP3, WAV, AAC, OGG 파일 선택 UI만 준비합니다.</p>
-        </div>
-        <label class="bgm-button">
-          BGM 선택
-          <input id="bgmInput" type="file" accept="audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg">
-        </label>
-      </div>
-      <div id="bgmName" class="bgm-name">선택된 BGM 없음</div>
     </section>
 
     <section class="panel action-panel">
       <div>
-        <h2>MP4 생성 준비</h2>
-        <p id="message">사진을 선택하면 STEP 2에서 연결할 MP4 생성 버튼 UI를 확인할 수 있습니다.</p>
+        <h2>MP4 &#49373;&#49457; &#51456;&#48708;</h2>
+        <p id="message">STEP 2 handles photo management only. Real MP4 generation starts in STEP 3.</p>
       </div>
-      <button id="generateButton" class="primary-button" type="button" disabled>MP4 생성</button>
+      <button id="generateButton" class="primary-button" type="button" disabled>MP4 &#49373;&#49457;</button>
     </section>
   </main>
   <script src="/app.js"></script>
