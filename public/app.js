@@ -49,6 +49,9 @@ const outputFormatInput = document.getElementById("outputFormatInput");
 const outputFileNameInput = document.getElementById("outputFileNameInput");
 const outputDirectoryInput = document.getElementById("outputDirectoryInput");
 const outputEstimateList = document.getElementById("outputEstimateList");
+const aiRecommendButton = document.getElementById("aiRecommendButton");
+const recommendationSummary = document.getElementById("recommendationSummary");
+const storyboardList = document.getElementById("storyboardList");
 
 const supportedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const autosaveKey = "highlightStudio.autosaveProject";
@@ -157,6 +160,7 @@ let selectedPhotoIds = new Set();
 let activePreviewId = null;
 let draggedPhotoId = null;
 let draggedTimelinePhotoId = null;
+let draggedStoryboardPhotoId = null;
 let activeFilter = "all";
 let timelineZoom = 100;
 let activeTransitionPhotoId = null;
@@ -398,7 +402,11 @@ function serializePhoto(photo, index) {
     duration: Number(photo.duration || photo.durationSeconds || getSecondsPerPhoto()),
     durationSeconds: Number(photo.durationSeconds || photo.duration || getSecondsPerPhoto()),
     transitionAfter: photo.transitionAfter ? createTransition(getTransitionType(photo.transitionAfter), getTransitionDuration(photo.transitionAfter)) : null,
-    caption: normalizeCaption(photo.caption)
+    caption: normalizeCaption(photo.caption),
+    favorite: Boolean(photo.favorite),
+    locked: Boolean(photo.locked),
+    rating: Number(photo.rating || 3),
+    recommended: Boolean(photo.recommended)
   };
 }
 
@@ -494,7 +502,11 @@ function restoreProjectData(data) {
         durationSeconds: Number(photo.durationSeconds || photo.duration || getSecondsPerPhoto()),
         photoEffect: photo.photoEffect || "none",
         caption: normalizeCaption(photo.caption),
-        transitionAfter: photo.transitionAfter ? createTransition(getTransitionType(photo.transitionAfter), getTransitionDuration(photo.transitionAfter)) : null
+        transitionAfter: photo.transitionAfter ? createTransition(getTransitionType(photo.transitionAfter), getTransitionDuration(photo.transitionAfter)) : null,
+        favorite: Boolean(photo.favorite),
+        locked: Boolean(photo.locked),
+        rating: Number(photo.rating || 3),
+        recommended: Boolean(photo.recommended)
       };
     });
   selectedPhotoIds = new Set(photos.filter(photo => photo.selected).map(photo => photo.id));
@@ -726,6 +738,63 @@ function renderPhotoEffectControl(photo) {
   `;
 }
 
+function renderRating(photo) {
+  const rating = Number(photo.rating || 3);
+  return [1, 2, 3, 4, 5].map(value => {
+    const activeClass = value <= rating ? " is-active" : "";
+    return `<button type="button" class="star-button${activeClass}" data-action="rating" data-id="${escapeHtml(photo.id)}" data-rating="${value}" aria-label="${value}\uc810">\u2605</button>`;
+  }).join("");
+}
+
+function renderStoryboard() {
+  if (!storyboardList) return;
+  if (!photos.length) {
+    storyboardList.innerHTML = `<div class="empty-state">\uc0ac\uc9c4\uc744 \ucd94\uac00\ud558\uba74 \uc2a4\ud1a0\ub9ac\ubcf4\ub4dc\uac00 \uc5ec\uae30\uc5d0 \ud45c\uc2dc\ub429\ub2c8\ub2e4.</div>`;
+    recommendationSummary.textContent = "\uc0ac\uc9c4\uc744 \ucd94\uac00\ud558\uba74 \uc784\uc2dc \ucd94\ucc9c \uc54c\uace0\ub9ac\uc998\uc73c\ub85c \uad6c\uc131\uc744 \uc81c\uc548\ud569\ub2c8\ub2e4.";
+    return;
+  }
+
+  const sceneCards = photos.map((photo, index) => {
+    const orientation = photo.height > photo.width ? "\uc138\ub85c" : photo.width > photo.height ? "\uac00\ub85c" : "\uc815\uc0ac\uac01";
+    const studentLabel = (photo.students || []).map(id => getStudent(id)?.name).filter(Boolean).join(", ") || "\ud559\uc0dd \ud0dc\uadf8 \uc5c6\uc74c";
+    return `
+      <article class="storyboard-card${photo.locked ? " is-locked" : ""}${photo.recommended ? " is-recommended" : ""}" draggable="${photo.locked ? "false" : "true"}" data-id="${escapeHtml(photo.id)}">
+        <div class="storyboard-flow">\u2193</div>
+        <button class="storyboard-thumb" type="button" data-action="preview" data-id="${escapeHtml(photo.id)}">
+          <img src="${getPhotoUrl(photo)}" alt="">
+        </button>
+        <div class="storyboard-meta">
+          <strong>${index + 1}. ${escapeHtml(photo.file.name)}</strong>
+          <span>${orientation} / ${Number(photo.durationSeconds || getSecondsPerPhoto())}\ucd08 / ${studentLabel}</span>
+          <div class="storyboard-badges">
+            ${photo.favorite ? `<em>\u2605 \uc990\uaca8\ucc3e\uae30</em>` : ""}
+            ${photo.locked ? `<em>\uD83D\uDD12 \uc7a0\uae08</em>` : ""}
+            ${photo.recommended ? `<em>AI \ucd94\ucc9c</em>` : ""}
+          </div>
+          <div class="rating-control">${renderRating(photo)}</div>
+          <div class="storyboard-actions">
+            <button type="button" data-action="favorite" data-id="${escapeHtml(photo.id)}">${photo.favorite ? "\uc990\uaca8\ucc3e\uae30 \ud574\uc81c" : "\u2605 \uc990\uaca8\ucc3e\uae30"}</button>
+            <button type="button" data-action="lock" data-id="${escapeHtml(photo.id)}">${photo.locked ? "\uc7a0\uae08 \ud574\uc81c" : "\uD83D\uDD12 \uc7a0\uae08"}</button>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  storyboardList.innerHTML = `
+    <article class="storyboard-card storyboard-fixed">
+      <div class="storyboard-scene-label">\uc624\ud504\ub2dd</div>
+      <strong>${escapeHtml(openingCaptionInput.value || "\uc624\ud504\ub2dd \uc790\ub9c9")}</strong>
+    </article>
+    ${sceneCards}
+    <article class="storyboard-card storyboard-fixed">
+      <div class="storyboard-flow">\u2193</div>
+      <div class="storyboard-scene-label">\uc5d4\ub529</div>
+      <strong>${escapeHtml(endingCaptionInput.value || "\uc5d4\ub529 \uc790\ub9c9")}</strong>
+    </article>
+  `;
+}
+
 function renderList() {
   const visiblePhotos = getFilteredPhotos();
   if (!photos.length) {
@@ -733,6 +802,7 @@ function renderList() {
     activePreviewId = null;
     renderPreview();
     renderTimeline();
+    renderStoryboard();
     updateStats();
     return;
   }
@@ -741,6 +811,7 @@ function renderList() {
     photoList.innerHTML = `<div class="empty-state">\ud604\uc7ac \ud544\ud130\uc5d0 \ud574\ub2f9\ud558\ub294 \uc0ac\uc9c4\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.</div>`;
     renderPreview();
     renderTimeline();
+    renderStoryboard();
     updateStats();
     return;
   }
@@ -780,6 +851,7 @@ function renderList() {
   }
   renderPreview();
   renderTimeline();
+  renderStoryboard();
   updateStats();
 }
 
@@ -978,6 +1050,10 @@ async function addFiles(fileList) {
       duration: getSecondsPerPhoto(),
       photoEffect: "none",
       caption: createCaption(),
+      favorite: false,
+      locked: false,
+      rating: 3,
+      recommended: false,
       transitionAfter: createTransition(defaultTransition, 0.5)
     };
   }));
@@ -1012,12 +1088,84 @@ function movePhotoTo(id, targetId) {
   const fromIndex = findIndexById(id);
   const toIndex = findIndexById(targetId);
   if (fromIndex < 0 || toIndex < 0) return;
+  if (photos[fromIndex]?.locked || photos[toIndex]?.locked) {
+    setMessage("\uc7a0\uae08\ub41c \uc7a5\uba74\uc740 \uc21c\uc11c\ub97c \ubcc0\uacbd\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.");
+    return;
+  }
   const next = [...photos];
   const [item] = next.splice(fromIndex, 1);
   next.splice(toIndex, 0, item);
   photos = next;
   normalizeLastTransition();
   activePreviewId = id;
+  renderList();
+}
+
+function toggleStoryboardFlag(photoId, key) {
+  const photo = photos.find(item => item.id === photoId);
+  if (!photo) return;
+  photo[key] = !photo[key];
+  activePreviewId = photoId;
+  renderList();
+}
+
+function updatePhotoRating(photoId, rating) {
+  const photo = photos.find(item => item.id === photoId);
+  if (!photo) return;
+  photo.rating = Math.max(1, Math.min(5, Number(rating) || 3));
+  if (photo.rating >= 4) photo.duration = Math.max(Number(photo.duration || photo.durationSeconds || getSecondsPerPhoto()), getSecondsPerPhoto() + 1);
+  activePreviewId = photoId;
+  renderList();
+}
+
+function applyAiRecommendation() {
+  if (!photos.length) {
+    setMessage("\ucd94\ucc9c\ud560 \uc0ac\uc9c4\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.");
+    return;
+  }
+
+  const lockedByIndex = new Map();
+  const duplicateKeys = new Set();
+  const seenKeys = new Set();
+  photos.forEach((photo, index) => {
+    if (photo.locked) lockedByIndex.set(index, photo);
+    const duplicateKey = `${photo.file?.name || photo.fileName || ""}-${photo.file?.size || photo.fileSize || 0}`;
+    if (seenKeys.has(duplicateKey)) duplicateKeys.add(photo.id);
+    else seenKeys.add(duplicateKey);
+  });
+
+  const movable = photos
+    .filter(photo => !photo.locked)
+    .map((photo, index) => ({ photo, originalIndex: index }))
+    .sort((a, b) => {
+      const aPortrait = a.photo.height > a.photo.width ? 1 : 0;
+      const bPortrait = b.photo.height > b.photo.width ? 1 : 0;
+      const aFavorite = a.photo.favorite ? 1 : 0;
+      const bFavorite = b.photo.favorite ? 1 : 0;
+      const aDuplicate = duplicateKeys.has(a.photo.id) ? 1 : 0;
+      const bDuplicate = duplicateKeys.has(b.photo.id) ? 1 : 0;
+      const ratingDiff = Number(b.photo.rating || 3) - Number(a.photo.rating || 3);
+      return (aDuplicate - bDuplicate) || (bFavorite - aFavorite) || (bPortrait - aPortrait) || ratingDiff || (a.originalIndex - b.originalIndex);
+    })
+    .map(item => item.photo);
+
+  const next = [];
+  let movableIndex = 0;
+  for (let index = 0; index < photos.length; index += 1) {
+    if (lockedByIndex.has(index)) next.push(lockedByIndex.get(index));
+    else next.push(movable[movableIndex++]);
+  }
+
+  photos = next.map(photo => ({
+    ...photo,
+    recommended: !photo.locked && !duplicateKeys.has(photo.id)
+  }));
+  normalizeLastTransition();
+  activePreviewId = photos[0]?.id || null;
+  const lockedCount = lockedByIndex.size;
+  const portraitCount = photos.filter(photo => photo.height > photo.width).length;
+  recommendationSummary.textContent = `AI \uc0ac\uc6a9 \uc5c6\uc774 \uc784\uc2dc \uc54c\uace0\ub9ac\uc998\uc73c\ub85c \uc7ac\uad6c\uc131: \uc138\ub85c \uc0ac\uc9c4 ${portraitCount}\uc7a5 \uc6b0\uc120, \uc911\ubcf5 ${duplicateKeys.size}\uc7a5 \ud6c4\ubc18 \ubc30\uce58, \uc7a0\uae08 ${lockedCount}\uc7a5 \uc704\uce58 \uc720\uc9c0, \ud750\ub9bc/\ud559\uc0dd \uc5f0\uc18d \ud310\ubcc4\uc740 \ucd94\ud6c4 \uc801\uc6a9 \uc608\uc815.`;
+  setMessage("AI \ucd94\ucc9c \uad6c\uc131\uc744 \uc801\uc6a9\ud588\uc2b5\ub2c8\ub2e4. \uc2e4\uc81c AI API\ub294 \uc0ac\uc6a9\ud558\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4.");
   renderList();
 }
 
@@ -1292,6 +1440,43 @@ transitionEditor.addEventListener("change", event => {
   }
 });
 
+storyboardList.addEventListener("click", event => {
+  const target = event.target.closest("[data-action]");
+  if (!target) return;
+  const { action, id } = target.dataset;
+  if (action === "preview") {
+    activePreviewId = id;
+    renderList();
+  }
+  if (action === "favorite") toggleStoryboardFlag(id, "favorite");
+  if (action === "lock") toggleStoryboardFlag(id, "locked");
+  if (action === "rating") updatePhotoRating(id, target.dataset.rating);
+});
+
+storyboardList.addEventListener("dragstart", event => {
+  const card = event.target.closest(".storyboard-card[data-id]");
+  if (!card || card.classList.contains("is-locked")) return;
+  draggedStoryboardPhotoId = card.dataset.id;
+  card.classList.add("is-dragging");
+});
+
+storyboardList.addEventListener("dragend", event => {
+  event.target.closest(".storyboard-card")?.classList.remove("is-dragging");
+  draggedStoryboardPhotoId = null;
+});
+
+storyboardList.addEventListener("dragover", event => {
+  if (event.target.closest(".storyboard-card[data-id]")) event.preventDefault();
+});
+
+storyboardList.addEventListener("drop", event => {
+  event.preventDefault();
+  const card = event.target.closest(".storyboard-card[data-id]");
+  if (card) movePhotoTo(draggedStoryboardPhotoId, card.dataset.id);
+});
+
+aiRecommendButton.addEventListener("click", applyAiRecommendation);
+
 photoList.addEventListener("dragstart", event => {
   const row = event.target.closest(".photo-row");
   if (!row) return;
@@ -1346,8 +1531,14 @@ bgmInput.addEventListener("change", () => {
   setMessage(bgmReference ? "BGM \ucc38\uc870 \uc815\ubcf4\ub97c \ucd94\uac00\ud588\uc2b5\ub2c8\ub2e4. \uc6d0\ubcf8 \uc74c\uc6d0\uc740 .hsp\uc5d0 \ud3ec\ud568\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4." : "BGM \uc120\ud0dd\uc744 \ud574\uc81c\ud588\uc2b5\ub2c8\ub2e4.");
   renderOutputEstimate();
 });
-openingCaptionInput.addEventListener("input", renderOutputEstimate);
-endingCaptionInput.addEventListener("input", renderOutputEstimate);
+openingCaptionInput.addEventListener("input", () => {
+  renderOutputEstimate();
+  renderStoryboard();
+});
+endingCaptionInput.addEventListener("input", () => {
+  renderOutputEstimate();
+  renderStoryboard();
+});
 [
   outputResolutionInput,
   customWidthInput,
