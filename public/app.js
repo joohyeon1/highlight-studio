@@ -74,9 +74,20 @@ const outputsList = document.getElementById("outputsList");
 const refreshQueueButton = document.getElementById("refreshQueueButton");
 const renderQueueSummary = document.getElementById("renderQueueSummary");
 const renderQueueList = document.getElementById("renderQueueList");
+const loginStateBadge = document.getElementById("loginStateBadge");
+const loginForm = document.getElementById("loginForm");
+const loginEmailInput = document.getElementById("loginEmailInput");
+const loginPasswordInput = document.getElementById("loginPasswordInput");
+const loginButton = document.getElementById("loginButton");
+const logoutButton = document.getElementById("logoutButton");
+const authMessage = document.getElementById("authMessage");
+const licenseStatusList = document.getElementById("licenseStatusList");
+const checkUpdateButton = document.getElementById("checkUpdateButton");
+const updateStatusList = document.getElementById("updateStatusList");
 
 const supportedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const autosaveKey = "highlightStudio.autosaveProject";
+const authStorageKey = "highlightStudio.localAuth";
 const projectFormatVersion = 1;
 const labelColors = ["#2563eb", "#16a34a", "#f97316", "#9333ea", "#0891b2", "#dc2626", "#4f46e5", "#0f766e"];
 
@@ -239,6 +250,117 @@ function formatDuration(seconds) {
 function formatDateTime(value) {
   if (!value) return "";
   return new Date(value).toLocaleString("ko-KR", { hour12: false });
+}
+
+function getAuthSession() {
+  try {
+    return JSON.parse(localStorage.getItem(authStorageKey) || "null");
+  } catch (_) {
+    return null;
+  }
+}
+
+function setAuthSession(session) {
+  if (session?.email) {
+    localStorage.setItem(authStorageKey, JSON.stringify(session));
+  } else {
+    localStorage.removeItem(authStorageKey);
+  }
+}
+
+function licenseLabel(status) {
+  return {
+    trial: "체험판",
+    active: "정상",
+    expired: "만료",
+    blocked: "차단"
+  }[status] || status || "체험판";
+}
+
+function renderLicenseStatus(license = {}) {
+  const features = Array.isArray(license.features) ? license.features.join(", ") : "";
+  licenseStatusList.innerHTML = `
+    <div><dt>로그인</dt><dd>${license.loggedIn ? "로그인됨" : "로그아웃"}</dd></div>
+    <div><dt>이메일</dt><dd>${escapeHtml(license.email || "-")}</dd></div>
+    <div><dt>상태</dt><dd>${escapeHtml(licenseLabel(license.licenseStatus))}</dd></div>
+    <div><dt>만료일</dt><dd>${license.expiresAt ? formatDateTime(license.expiresAt) : "-"}</dd></div>
+    <div><dt>남은 일수</dt><dd>${Number(license.daysLeft || 0)}일</dd></div>
+    <div><dt>기능</dt><dd>${escapeHtml(features || "-")}</dd></div>
+  `;
+}
+
+function renderAuthState(session = getAuthSession()) {
+  const loggedIn = Boolean(session?.email);
+  loginStateBadge.textContent = loggedIn ? `로그인: ${session.email}` : "로그아웃";
+  logoutButton.disabled = !loggedIn;
+  loginButton.disabled = false;
+  if (loggedIn && !loginEmailInput.value) loginEmailInput.value = session.email;
+}
+
+async function loadLicenseStatus() {
+  const session = getAuthSession();
+  const headers = session?.email ? { "x-highlight-email": session.email } : {};
+  const response = await fetch("/api/license/status", { headers });
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw new Error(result.error || "라이선스 상태를 확인하지 못했습니다.");
+  renderLicenseStatus(result.license);
+  renderAuthState(session);
+  return result.license;
+}
+
+async function loginLocalAccount(event) {
+  event.preventDefault();
+  loginButton.disabled = true;
+  authMessage.textContent = "로그인 확인 중입니다.";
+  try {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: loginEmailInput.value.trim(),
+        password: loginPasswordInput.value
+      })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "로그인에 실패했습니다.");
+    setAuthSession(result.session);
+    loginPasswordInput.value = "";
+    authMessage.textContent = "로그인되었습니다.";
+    renderLicenseStatus(result.license);
+    renderAuthState(result.session);
+  } catch (error) {
+    authMessage.textContent = error.message || "로그인에 실패했습니다.";
+  } finally {
+    loginButton.disabled = false;
+  }
+}
+
+async function logoutLocalAccount() {
+  await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+  setAuthSession(null);
+  loginPasswordInput.value = "";
+  authMessage.textContent = "로그아웃되었습니다.";
+  renderAuthState(null);
+  await loadLicenseStatus().catch(error => { authMessage.textContent = error.message; });
+}
+
+async function checkForUpdates() {
+  updateStatusList.innerHTML = `<div><dt>상태</dt><dd>확인 중</dd></div>`;
+  try {
+    const response = await fetch("/api/update/check");
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "업데이트 정보를 확인하지 못했습니다.");
+    const update = result.update;
+    updateStatusList.innerHTML = `
+      <div><dt>현재 버전</dt><dd>${escapeHtml(update.currentVersion)}</dd></div>
+      <div><dt>최신 버전</dt><dd>${escapeHtml(update.latestVersion)}</dd></div>
+      <div><dt>업데이트</dt><dd>${update.updateAvailable ? "가능" : "최신 상태"}</dd></div>
+      <div><dt>다운로드</dt><dd>${update.downloadUrl ? `<a href="${escapeHtml(update.downloadUrl)}" target="_blank" rel="noreferrer">열기</a>` : "-"}</dd></div>
+      <div><dt>안내</dt><dd>${escapeHtml(update.releaseNote || "-")}</dd></div>
+    `;
+  } catch (error) {
+    updateStatusList.innerHTML = `<div><dt>오류</dt><dd>${escapeHtml(error.message || "업데이트 확인 실패")}</dd></div>`;
+  }
 }
 
 function outputUrl(filename) {
@@ -2003,6 +2125,9 @@ generateButton.addEventListener("click", () => {
   renderMp4();
 });
 cancelRenderButton.addEventListener("click", cancelRender);
+loginForm.addEventListener("submit", loginLocalAccount);
+logoutButton.addEventListener("click", logoutLocalAccount);
+checkUpdateButton.addEventListener("click", checkForUpdates);
 copyLatestShareButton.addEventListener("click", () => {
   copyShareLink(latestOutputFile?.filename);
 });
@@ -2058,6 +2183,9 @@ fetch("/health")
 defaultTransitionInput.innerHTML = optionMarkup(transitionOptions, "fade");
 renderStudents();
 renderList();
+renderAuthState();
+loadLicenseStatus().catch(error => { authMessage.textContent = error.message; });
+checkForUpdates();
 loadOutputs();
 loadRenderQueue();
 queuePollTimer = setInterval(loadRenderQueue, 2000);

@@ -8,6 +8,7 @@ const multer = require("multer");
 loadLocalEnv();
 
 const PORT = Number(process.env.PORT || 4000);
+const APP_VERSION = "0.1.0";
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const UPLOAD_DIR = path.join(ROOT_DIR, "uploads");
@@ -109,6 +110,33 @@ function createShareInfo(req, fileName) {
       javascriptKeyConfigured: Boolean(process.env.KAKAO_JAVASCRIPT_KEY),
       sdkKeyConfigured: Boolean(process.env.KAKAO_SDK_KEY)
     }
+  };
+}
+
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase().slice(0, 120);
+}
+
+function buildLicenseStatus(email = "") {
+  const normalizedEmail = normalizeEmail(email);
+  const configuredStatus = String(process.env.HIGHLIGHT_LICENSE_STATUS || "").trim().toLowerCase();
+  const allowedStatuses = new Set(["trial", "active", "expired", "blocked"]);
+  const licenseStatus = allowedStatuses.has(configuredStatus) ? configuredStatus : (normalizedEmail ? "trial" : "trial");
+  const expiresAt = process.env.HIGHLIGHT_LICENSE_EXPIRES_AT || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  const daysLeft = Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+  const featuresByStatus = {
+    trial: ["사진 업로드", "MP4 생성", "outputs 관리", "공유 준비"],
+    active: ["사진 업로드", "MP4 생성", "outputs 관리", "공유", "업데이트 확인"],
+    expired: ["프로젝트 열기", "outputs 확인"],
+    blocked: ["로그인", "라이선스 확인"]
+  };
+  return {
+    loggedIn: Boolean(normalizedEmail),
+    email: normalizedEmail,
+    licenseStatus,
+    expiresAt,
+    daysLeft,
+    features: featuresByStatus[licenseStatus] || featuresByStatus.trial
   };
 }
 
@@ -541,6 +569,44 @@ app.use(express.static(PUBLIC_DIR));
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, app: "Highlight Studio", port: PORT, ffmpeg: ffmpegPath });
+});
+
+app.post("/api/auth/login", (req, res) => {
+  const email = normalizeEmail(req.body?.email);
+  const password = String(req.body?.password || "");
+  if (!email || !email.includes("@")) return res.status(400).json({ ok: false, error: "이메일을 확인해 주세요." });
+  if (password.length < 4) return res.status(400).json({ ok: false, error: "비밀번호는 4자 이상 입력해 주세요." });
+  res.json({
+    ok: true,
+    session: {
+      email,
+      loggedInAt: new Date().toISOString()
+    },
+    license: buildLicenseStatus(email)
+  });
+});
+
+app.post("/api/auth/logout", (_req, res) => {
+  res.json({ ok: true, loggedIn: false });
+});
+
+app.get("/api/license/status", (req, res) => {
+  const email = normalizeEmail(req.get("x-highlight-email") || req.query.email);
+  res.json({ ok: true, license: buildLicenseStatus(email) });
+});
+
+app.get("/api/update/check", (_req, res) => {
+  const latestVersion = process.env.HIGHLIGHT_LATEST_VERSION || APP_VERSION;
+  res.json({
+    ok: true,
+    update: {
+      currentVersion: APP_VERSION,
+      latestVersion,
+      updateAvailable: latestVersion !== APP_VERSION,
+      downloadUrl: process.env.HIGHLIGHT_UPDATE_URL || "",
+      releaseNote: process.env.HIGHLIGHT_RELEASE_NOTE || "현재 로컬 개발 버전입니다. 실제 업데이트 서버 연동은 다음 단계에서 연결합니다."
+    }
+  });
 });
 
 app.post("/api/videos", upload.array("photos", MAX_PHOTOS), async (req, res) => {
