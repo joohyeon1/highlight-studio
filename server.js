@@ -5,6 +5,8 @@ const { spawn } = require("node:child_process");
 const express = require("express");
 const multer = require("multer");
 
+loadLocalEnv();
+
 const PORT = Number(process.env.PORT || 4000);
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
@@ -27,6 +29,22 @@ try {
 } catch (_) {}
 
 const app = express();
+
+function loadLocalEnv() {
+  const envPath = path.join(__dirname, ".env");
+  if (!fs.existsSync(envPath)) return;
+  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const separator = trimmed.indexOf("=");
+    if (separator <= 0) continue;
+    const key = trimmed.slice(0, separator).trim();
+    const rawValue = trimmed.slice(separator + 1).trim();
+    if (!key || process.env[key] !== undefined) continue;
+    process.env[key] = rawValue.replace(/^["']|["']$/g, "");
+  }
+}
 
 function licenseGate(req, res, next) {
   // Future hook: validate license key or signed token here.
@@ -66,6 +84,31 @@ function outputFilePayload(fileName, stat) {
     modifiedAt: stat.mtime.toISOString(),
     url: `/outputs/${encodeURIComponent(fileName)}`,
     downloadUrl: `/api/outputs/${encodeURIComponent(fileName)}/download`
+  };
+}
+
+function getPublicBaseUrl(req) {
+  const configured = String(process.env.PUBLIC_SHARE_BASE_URL || process.env.HIGHLIGHT_PUBLIC_URL || "").trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+function createShareInfo(req, fileName) {
+  const baseUrl = getPublicBaseUrl(req);
+  const encodedName = encodeURIComponent(fileName);
+  const title = path.basename(fileName, ".mp4");
+  const shareUrl = `${baseUrl}/outputs/${encodedName}`;
+  return {
+    fileName,
+    shareUrl,
+    title: `${title} - Highlight Studio`,
+    description: "Highlight Studio에서 생성한 태권도 하이라이트 영상입니다.",
+    thumbnailUrl: `${baseUrl}/share-thumbnail.svg`,
+    kakao: {
+      ready: Boolean(process.env.KAKAO_JAVASCRIPT_KEY || process.env.KAKAO_SDK_KEY),
+      javascriptKeyConfigured: Boolean(process.env.KAKAO_JAVASCRIPT_KEY),
+      sdkKeyConfigured: Boolean(process.env.KAKAO_SDK_KEY)
+    }
   };
 }
 
@@ -587,6 +630,15 @@ app.get("/api/outputs", async (_req, res) => {
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message || "출력 파일 목록을 불러오지 못했습니다." });
   }
+});
+
+app.get("/api/outputs/:filename/share-info", (req, res) => {
+  const resolved = resolveOutputMp4(req.params.filename);
+  if (!resolved) return res.status(400).json({ ok: false, error: "MP4 출력 파일명만 공유할 수 있습니다." });
+  fs.stat(resolved.fullPath, (error, stat) => {
+    if (error || !stat.isFile()) return res.status(404).json({ ok: false, error: "공유할 출력 파일을 찾을 수 없습니다." });
+    res.json({ ok: true, share: createShareInfo(req, resolved.cleanName) });
+  });
 });
 
 app.get("/api/outputs/:filename/download", (req, res) => {

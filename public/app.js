@@ -64,6 +64,10 @@ const storyboardList = document.getElementById("storyboardList");
 const outputPreviewVideo = document.getElementById("outputPreviewVideo");
 const outputPreviewEmpty = document.getElementById("outputPreviewEmpty");
 const downloadLatestOutputButton = document.getElementById("downloadLatestOutputButton");
+const copyLatestShareButton = document.getElementById("copyLatestShareButton");
+const kakaoLatestShareButton = document.getElementById("kakaoLatestShareButton");
+const bandLatestShareButton = document.getElementById("bandLatestShareButton");
+const shareStatusText = document.getElementById("shareStatusText");
 const refreshOutputsButton = document.getElementById("refreshOutputsButton");
 const outputsSummary = document.getElementById("outputsSummary");
 const outputsList = document.getElementById("outputsList");
@@ -245,6 +249,20 @@ function outputDownloadUrl(filename) {
   return `/api/outputs/${encodeURIComponent(filename)}/download`;
 }
 
+function outputShareInfoUrl(filename) {
+  return `/api/outputs/${encodeURIComponent(filename)}/share-info`;
+}
+
+function setShareStatus(text = "") {
+  if (shareStatusText) shareStatusText.textContent = text;
+}
+
+function setLatestShareButtonsEnabled(enabled) {
+  for (const button of [copyLatestShareButton, kakaoLatestShareButton, bandLatestShareButton]) {
+    if (button) button.disabled = !enabled;
+  }
+}
+
 function setOutputPreview(file) {
   latestOutputFile = file || null;
   if (!outputPreviewVideo || !downloadLatestOutputButton) return;
@@ -255,6 +273,8 @@ function setOutputPreview(file) {
     downloadLatestOutputButton.href = "#";
     downloadLatestOutputButton.removeAttribute("download");
     downloadLatestOutputButton.classList.add("is-disabled");
+    setLatestShareButtonsEnabled(false);
+    setShareStatus("");
     return;
   }
   outputPreviewVideo.src = file.url || outputUrl(file.filename);
@@ -263,6 +283,59 @@ function setOutputPreview(file) {
   downloadLatestOutputButton.href = file.downloadUrl || outputDownloadUrl(file.filename);
   downloadLatestOutputButton.download = file.filename;
   downloadLatestOutputButton.classList.remove("is-disabled");
+  setLatestShareButtonsEnabled(true);
+  setShareStatus("");
+}
+
+async function getShareInfo(filename) {
+  if (!filename) throw new Error("공유할 파일을 선택해 주세요.");
+  const response = await fetch(outputShareInfoUrl(filename));
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw new Error(result.error || "공유 정보를 불러오지 못했습니다.");
+  return result.share;
+}
+
+async function copyShareLink(filename) {
+  try {
+    const share = await getShareInfo(filename);
+    if (!navigator.clipboard) throw new Error("브라우저에서 클립보드를 사용할 수 없습니다.");
+    await navigator.clipboard.writeText(share.shareUrl);
+    setShareStatus("공유 링크를 복사했습니다.");
+    setMessage("공유 링크를 복사했습니다.");
+  } catch (error) {
+    setShareStatus(error.message || "공유 링크 복사에 실패했습니다.");
+    setMessage(error.message || "공유 링크 복사에 실패했습니다.");
+  }
+}
+
+async function shareToKakao(filename) {
+  try {
+    const share = await getShareInfo(filename);
+    if (!share.kakao?.ready) {
+      setShareStatus("카카오 공유 준비 필요: .env에 KAKAO_JAVASCRIPT_KEY를 설정해 주세요.");
+      setMessage("카카오 공유 준비 필요: .env에 KAKAO_JAVASCRIPT_KEY를 설정해 주세요.");
+      return;
+    }
+    setShareStatus("카카오 공유 데이터가 준비되었습니다. 실제 SDK 연동은 배포 단계에서 연결합니다.");
+    setMessage(`카카오 공유 준비: ${share.title}`);
+  } catch (error) {
+    setShareStatus(error.message || "카카오 공유 정보를 만들지 못했습니다.");
+    setMessage(error.message || "카카오 공유 정보를 만들지 못했습니다.");
+  }
+}
+
+async function shareToBand(filename) {
+  try {
+    const share = await getShareInfo(filename);
+    const body = `${share.title}\n${share.description}\n${share.shareUrl}`;
+    const bandUrl = `https://band.us/plugin/share?body=${encodeURIComponent(body)}&route=${encodeURIComponent(location.origin)}`;
+    window.open(bandUrl, "_blank", "noopener,noreferrer");
+    setShareStatus("밴드 공유 창을 열었습니다.");
+    setMessage("밴드 공유 창을 열었습니다.");
+  } catch (error) {
+    setShareStatus(error.message || "밴드 공유 URL을 만들지 못했습니다.");
+    setMessage(error.message || "밴드 공유 URL을 만들지 못했습니다.");
+  }
 }
 
 function renderOutputs(outputs = []) {
@@ -284,6 +357,9 @@ function renderOutputs(outputs = []) {
       <div class="output-actions">
         <button type="button" class="secondary-button" data-action="preview-output" data-filename="${escapeHtml(file.filename)}">미리보기</button>
         <a class="secondary-button" href="${file.downloadUrl}" download="${escapeHtml(file.filename)}">다운로드</a>
+        <button type="button" class="secondary-button" data-action="copy-share" data-filename="${escapeHtml(file.filename)}">링크 복사</button>
+        <button type="button" class="secondary-button" data-action="kakao-share" data-filename="${escapeHtml(file.filename)}">카카오 공유</button>
+        <button type="button" class="secondary-button" data-action="band-share" data-filename="${escapeHtml(file.filename)}">밴드 공유</button>
         <button type="button" class="danger-button" data-action="delete-output" data-filename="${escapeHtml(file.filename)}">삭제</button>
       </div>
     </article>
@@ -1927,6 +2003,15 @@ generateButton.addEventListener("click", () => {
   renderMp4();
 });
 cancelRenderButton.addEventListener("click", cancelRender);
+copyLatestShareButton.addEventListener("click", () => {
+  copyShareLink(latestOutputFile?.filename);
+});
+kakaoLatestShareButton.addEventListener("click", () => {
+  shareToKakao(latestOutputFile?.filename);
+});
+bandLatestShareButton.addEventListener("click", () => {
+  shareToBand(latestOutputFile?.filename);
+});
 refreshQueueButton.addEventListener("click", () => {
   loadRenderQueue();
 });
@@ -1950,6 +2035,15 @@ outputsList.addEventListener("click", event => {
       url: outputUrl(filename),
       downloadUrl: outputDownloadUrl(filename)
     });
+  }
+  if (target.dataset.action === "copy-share") {
+    copyShareLink(filename);
+  }
+  if (target.dataset.action === "kakao-share") {
+    shareToKakao(filename);
+  }
+  if (target.dataset.action === "band-share") {
+    shareToBand(filename);
   }
   if (target.dataset.action === "delete-output") {
     deleteOutputFile(filename);

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Highlight Studio shared video">
+  <rect width="1200" height="630" fill="#0f172a"/>
+  <rect x="72" y="72" width="1056" height="486" rx="28" fill="#ffffff"/>
+  <rect x="118" y="118" width="964" height="250" rx="18" fill="#1d4ed8"/>
+  <path d="M555 192v102l88-51-88-51z" fill="#ffffff"/>
+  <text x="118" y="434" fill="#0f172a" font-family="Arial, sans-serif" font-size="58" font-weight="800">Highlight Studio</text>
+  <text x="118" y="496" fill="#475569" font-family="Arial, sans-serif" font-size="34" font-weight="700">Taekwondo Highlight Video</text>
+</svg>
