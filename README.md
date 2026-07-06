@@ -1,24 +1,180 @@
-﻿# Highlight Studio
+# Highlight Studio
 
-SportsLink와 분리된 독립 AI 영상 제작 프로그램입니다.
+Highlight Studio is an independent video creation and editing app for Taekwondo academies. It is separated from SportsLink. SportsLink only opens Highlight Studio by URL and does not store videos or run rendering logic.
 
-## 로컬 실행
+## Current Status
 
-```bash
+Implemented through STEP 10 final check and stabilization.
+
+- Photo upload and browser-memory photo management
+- Student tagging and filtering
+- Timeline editing
+- Per-photo effects
+- Per-scene transitions
+- Scene captions
+- Project save/load as `.hsp`
+- Output settings
+- Storyboard and recommendation structure
+- FFmpeg MP4 rendering
+- Render progress, logs, cancel, and queue
+- Output preview, download, list, and delete
+- Share link copy, Kakao share preparation, Band share URL
+- Local login, license status, and update check structure
+- Deployment preparation for `https://highlight.sportlink.kr`
+
+## Local Run
+
+```powershell
+cd E:\codex\highlight-studio
 npm install
 npm start
 ```
 
-브라우저에서 `http://localhost:4000`을 엽니다.
+Open:
 
-## 구조
+```text
+http://localhost:4000
+```
 
-- `server.js`: 독립 Express 서버
-- `public/`: 업로드/생성 UI
-- `uploads/`: 임시 업로드 이미지
-- `outputs/`: 생성된 MP4 파일
-- `render.yaml`: 향후 `highlight.sportlink.kr` 배포용 기본 설정
+PowerShell note:
 
-## 라이선스 확장 지점
+```powershell
+npm.cmd install
+npm.cmd start
+```
 
-현재는 인증 없이 로컬 실행 우선입니다. 추후 `licenseGate` 미들웨어에 라이선스 검증을 추가하면 됩니다.
+Use `npm.cmd` if `npm.ps1` is blocked by the Windows execution policy.
+
+## Environment
+
+See `.env.example`.
+
+Important values:
+
+```text
+PORT=4000
+APP_URL=https://highlight.sportlink.kr
+LOCAL_APP_URL=http://localhost:4000
+KAKAO_JS_KEY=
+LICENSE_MODE=local
+```
+
+## Storage Policy
+
+Highlight Studio currently uses local temporary folders only.
+
+- `uploads/`: temporary uploaded images
+- `outputs/`: temporary generated MP4 files
+- No Firestore
+- No Firebase
+- No external DB
+- No long-term server storage
+
+Generated files may disappear after server restart, redeploy, or cleanup. This is expected for the current stage.
+
+## API
+
+Health:
+
+```text
+GET /api/health
+GET /health
+```
+
+Auth and license:
+
+```text
+POST /api/auth/login
+POST /api/auth/logout
+GET /api/license/status
+GET /api/update/check
+```
+
+Rendering:
+
+```text
+POST /api/render
+GET /api/render/status/:jobId
+GET /api/render/queue
+POST /api/render/cancel/:jobId
+```
+
+Outputs:
+
+```text
+GET /api/outputs
+GET /api/outputs/:filename/share-info
+GET /api/outputs/:filename/download
+DELETE /api/outputs/:filename
+```
+
+Legacy compatibility:
+
+```text
+POST /api/videos
+```
+
+## Security Checks
+
+- Output download/delete only accepts `.mp4` files in `outputs/`.
+- Path traversal attempts are rejected.
+- Uploads are handled by Multer into `uploads/`.
+- Login data is local-development only.
+- Passwords are not logged.
+- SportsLink code is not copied into this app.
+- Highlight Studio rendering code is not copied into SportsLink.
+
+## SportsLink Integration
+
+SportsLink opens Highlight Studio as an external app only:
+
+```js
+window.open(url, "_blank", "noopener,noreferrer");
+```
+
+Development URL:
+
+```text
+http://localhost:4000
+```
+
+Production URL:
+
+```text
+https://highlight.sportlink.kr
+```
+
+## Deployment
+
+See `README_DEPLOY.md`.
+
+Summary:
+
+- Build command: `npm install`
+- Start command: `npm start`
+- Health check: `GET /api/health`
+- Runtime: Node.js 20 or later
+- Domain: `highlight.sportlink.kr`
+
+## Final Check Notes
+
+Verified in STEP 10:
+
+- `npm.cmd install`
+- `npm.cmd start`
+- `/api/health`
+- Render job completion
+- Share info generation
+- Output list
+- License status
+- Update check
+- Download/delete path traversal rejection
+
+## Next Steps
+
+- Deploy to Render or the selected Node hosting provider.
+- Connect DNS for `highlight.sportlink.kr`.
+- Verify rendering on the deployed server.
+- Add real Kakao SDK integration after the public URL is live.
+- Add real license server integration in a later step.
+- Add long-term object storage only when a separate storage policy is approved.
