@@ -35,8 +35,10 @@ const photoEffectOptions = [
   { value: "none", label: "\uc5c6\uc74c" },
   { value: "slowZoomIn", label: "\ucc9c\ucc9c\ud788 \ud655\ub300" },
   { value: "slowZoomOut", label: "\ucc9c\ucc9c\ud788 \ucd95\uc18c" },
-  { value: "panHorizontal", label: "\uc88c\uc6b0 \uc774\ub3d9" },
-  { value: "panVertical", label: "\uc0c1\ud558 \uc774\ub3d9" },
+  { value: "panLeft", label: "\uc67c\ucabd \uc774\ub3d9" },
+  { value: "panRight", label: "\uc624\ub978\ucabd \uc774\ub3d9" },
+  { value: "panUp", label: "\uc704\ub85c \uc774\ub3d9" },
+  { value: "panDown", label: "\uc544\ub798\ub85c \uc774\ub3d9" },
   { value: "shake", label: "\ud754\ub4e4\ub9bc" },
   { value: "bright", label: "\ubc1d\uac8c" },
   { value: "dynamicZoom", label: "\uc5ed\ub3d9\ud615 \uc90c" }
@@ -64,6 +66,15 @@ const transitionPresets = {
   dynamic: ["zoomIn", "flash", "push", "slideUp", "zoomOut"],
   kids: ["fade", "slideRight", "slideLeft", "crossfade"],
   competition: ["flash", "zoomIn", "push", "crossfade"]
+};
+
+const photoEffectPresets = {
+  basic: ["none", "slowZoomIn", "slowZoomOut"],
+  emotional: ["slowZoomIn", "bright", "slowZoomOut", "none"],
+  taekwondo: ["dynamicZoom", "shake", "panLeft", "panRight", "slowZoomIn"],
+  dynamic: ["dynamicZoom", "panUp", "shake", "panDown", "slowZoomIn"],
+  kids: ["bright", "panRight", "panLeft", "slowZoomIn"],
+  competition: ["dynamicZoom", "bright", "shake", "slowZoomOut"]
 };
 
 let photos = [];
@@ -553,12 +564,15 @@ function updateTransitionAfter(photoId, value) {
 }
 
 function applyTransitionPreset() {
-  const pattern = transitionPresets[transitionPresetInput.value] || transitionPresets.basic;
+  const preset = transitionPresetInput.value;
+  const transitionPattern = transitionPresets[preset] || transitionPresets.basic;
+  const photoEffectPattern = photoEffectPresets[preset] || photoEffectPresets.basic;
   photos.forEach((photo, index) => {
-    if (index < photos.length - 1) photo.transitionAfter = pattern[index % pattern.length];
+    photo.photoEffect = photoEffectPattern[index % photoEffectPattern.length];
+    if (index < photos.length - 1) photo.transitionAfter = transitionPattern[index % transitionPattern.length];
   });
   normalizeLastTransition();
-  setMessage("\ud504\ub9ac\uc14b\uc744 \uc801\uc6a9\ud588\uc2b5\ub2c8\ub2e4. \uac01 \uc0ac\uc9c4 \uc0ac\uc774 \uc804\ud658\ud6a8\uacfc\ub294 \ub2e4\uc2dc \uac1c\ubcc4 \uc218\uc815\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.");
+  setMessage("\ud504\ub9ac\uc14b\uc744 \uc801\uc6a9\ud588\uc2b5\ub2c8\ub2e4. \uc0ac\uc9c4\ubcc4 \ud6a8\uacfc\uc640 \uc804\ud658\ud6a8\uacfc\ub294 \ub2e4\uc2dc \uac1c\ubcc4 \uc218\uc815\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.");
   renderList();
 }
 
