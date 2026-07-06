@@ -291,6 +291,12 @@ function getOutputOptions() {
   };
 }
 
+function getRenderablePhotos() {
+  const selected = photos.filter(photo => selectedPhotoIds.size ? selectedPhotoIds.has(photo.id) : photo.selected);
+  const target = selected.length ? selected : photos;
+  return target.filter(photo => photo.file instanceof File);
+}
+
 function updateOutputFileName() {
   if (!outputFileNameTouched) outputFileNameInput.value = createDefaultOutputFileName();
 }
@@ -566,6 +572,41 @@ function updateStats() {
 
 function setMessage(text) {
   message.textContent = text;
+}
+
+async function renderMp4() {
+  const renderablePhotos = getRenderablePhotos();
+  if (!renderablePhotos.length) {
+    setMessage("MP4 \uc0dd\uc131\uc5d0 \uc0ac\uc6a9\ud560 \uc6d0\ubcf8 \uc0ac\uc9c4 \ud30c\uc77c\uc774 \uc5c6\uc2b5\ub2c8\ub2e4. \uc0ac\uc9c4\uc744 \uc5c5\ub85c\ub4dc\ud558\uac70\ub098 \uc120\ud0dd\ud558\uc138\uc694.");
+    return;
+  }
+
+  const project = createProjectData();
+  project.photos = project.photos
+    .filter(photo => renderablePhotos.some(item => item.id === photo.id))
+    .map(photo => ({ ...photo, selected: true }));
+  const formData = new FormData();
+  formData.append("project", JSON.stringify(project));
+  for (const photo of renderablePhotos) {
+    formData.append("photos", photo.file, photo.id + (photo.file.name.match(/\.[^.]+$/)?.[0] || ".jpg"));
+  }
+
+  generateButton.disabled = true;
+  setMessage("MP4 \uc0dd\uc131 \uc911\uc785\ub2c8\ub2e4. \uc0ac\uc9c4 \uc218\uc640 \ud574\uc0c1\ub3c4\uc5d0 \ub530\ub77c \uc2dc\uac04\uc774 \uac78\ub9b4 \uc218 \uc788\uc2b5\ub2c8\ub2e4.");
+
+  try {
+    const response = await fetch("/api/render", {
+      method: "POST",
+      body: formData
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "MP4 \uc0dd\uc131\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
+    setMessage(`MP4 \uc0dd\uc131 \uc644\ub8cc: ${result.filename} / ${formatDuration(Math.round(result.durationSeconds || 0))} / ${formatBytes(result.bytes || 0)} / \ub2e4\uc6b4\ub85c\ub4dc: ${result.downloadUrl}`);
+  } catch (error) {
+    setMessage(error.message || "MP4 \uc0dd\uc131\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4. FFmpeg \uc124\uce58 \uc0c1\ud0dc\ub97c \ud655\uc778\ud558\uc138\uc694.");
+  } finally {
+    generateButton.disabled = photos.length === 0;
+  }
 }
 
 function downloadProject(data, fileName) {
@@ -1599,7 +1640,7 @@ nextPreviewButton.addEventListener("click", () => {
 });
 
 generateButton.addEventListener("click", () => {
-  setMessage("\uc601\uc0c1 \uc0dd\uc131 \uc900\ube44 \uc644\ub8cc: \uc790\ub9c9\uacfc \ud0c0\uc784\ub77c\uc778 \ub370\uc774\ud130\ub9cc \uc900\ube44\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \uc2e4\uc81c MP4 \uc0dd\uc131\uc740 \ub2e4\uc74c \ub2e8\uacc4\uc785\ub2c8\ub2e4.");
+  renderMp4();
 });
 
 fetch("/health")
