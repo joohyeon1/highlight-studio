@@ -45,27 +45,58 @@ const photoEffectOptions = [
 ];
 
 const transitionOptions = [
-  { value: "none", label: "\uc5c6\uc74c" },
-  { value: "fade", label: "\ud398\uc774\ub4dc" },
-  { value: "crossfade", label: "\ud06c\ub85c\uc2a4 \ud398\uc774\ub4dc" },
-  { value: "slideLeft", label: "\uc67c\ucabd \uc2ac\ub77c\uc774\ub4dc" },
-  { value: "slideRight", label: "\uc624\ub978\ucabd \uc2ac\ub77c\uc774\ub4dc" },
-  { value: "slideUp", label: "\uc704\ub85c \uc2ac\ub77c\uc774\ub4dc" },
-  { value: "slideDown", label: "\uc544\ub798\ub85c \uc2ac\ub77c\uc774\ub4dc" },
-  { value: "zoomIn", label: "\ud655\ub300 \uc804\ud658" },
-  { value: "zoomOut", label: "\ucd95\uc18c \uc804\ud658" },
-  { value: "flash", label: "\ud50c\ub798\uc2dc" },
-  { value: "blur", label: "\ube14\ub7ec" },
-  { value: "push", label: "\ubc00\uc5b4\ub0b4\uae30" }
+  { value: "none", label: "\uc5c6\uc74c", icon: "--" },
+  { value: "fade", label: "\ud398\uc774\ub4dc", icon: "F" },
+  { value: "crossfade", label: "\ud06c\ub85c\uc2a4 \ud398\uc774\ub4dc", icon: "XF" },
+  { value: "slideLeft", label: "\uc2ac\ub77c\uc774\ub4dc \uc67c\ucabd", icon: "L" },
+  { value: "slideRight", label: "\uc2ac\ub77c\uc774\ub4dc \uc624\ub978\ucabd", icon: "R" },
+  { value: "slideUp", label: "\uc2ac\ub77c\uc774\ub4dc \uc704", icon: "U" },
+  { value: "slideDown", label: "\uc2ac\ub77c\uc774\ub4dc \uc544\ub798", icon: "D" },
+  { value: "zoomIn", label: "\ud655\ub300", icon: "+" },
+  { value: "zoomOut", label: "\ucd95\uc18c", icon: "-" },
+  { value: "flash", label: "\ud50c\ub798\uc2dc", icon: "FL" },
+  { value: "blur", label: "\ube14\ub7ec", icon: "BL" },
+  { value: "push", label: "\ubc00\uc5b4\ub0b4\uae30", icon: "P" },
+  { value: "rotate", label: "\ud68c\uc804", icon: "RT" },
+  { value: "dissolve", label: "\ub514\uc878\ube0c", icon: "DZ" }
 ];
 
+const transitionDurationOptions = [0.2, 0.5, 1, 1.5, 2];
+
 const transitionPresets = {
-  basic: ["fade", "crossfade", "fade"],
-  emotional: ["crossfade", "fade", "blur", "crossfade"],
-  taekwondo: ["flash", "push", "slideLeft", "zoomIn", "slideRight"],
-  dynamic: ["zoomIn", "flash", "push", "slideUp", "zoomOut"],
-  kids: ["fade", "slideRight", "slideLeft", "crossfade"],
-  competition: ["flash", "zoomIn", "push", "crossfade"]
+  basic: [
+    { type: "fade", duration: 0.5 },
+    { type: "crossfade", duration: 0.5 }
+  ],
+  emotional: [
+    { type: "fade", duration: 1 },
+    { type: "crossfade", duration: 1.5 },
+    { type: "fade", duration: 1 },
+    { type: "blur", duration: 1 }
+  ],
+  taekwondo: [
+    { type: "slideLeft", duration: 0.5 },
+    { type: "flash", duration: 0.2 },
+    { type: "slideRight", duration: 0.5 },
+    { type: "flash", duration: 0.2 }
+  ],
+  dynamic: [
+    { type: "zoomIn", duration: 0.5 },
+    { type: "push", duration: 0.5 },
+    { type: "zoomOut", duration: 0.5 },
+    { type: "push", duration: 0.5 }
+  ],
+  kids: [
+    { type: "crossfade", duration: 1 },
+    { type: "fade", duration: 1.5 },
+    { type: "crossfade", duration: 1 }
+  ],
+  competition: [
+    { type: "zoomIn", duration: 0.5 },
+    { type: "rotate", duration: 0.5 },
+    { type: "zoomIn", duration: 0.5 },
+    { type: "rotate", duration: 0.5 }
+  ]
 };
 
 const photoEffectPresets = {
@@ -118,6 +149,42 @@ function formatDuration(seconds) {
 
 function getSecondsPerPhoto() {
   return Number(secondsInput.value || 2);
+}
+
+function createTransition(type = "fade", duration = 0.5) {
+  return {
+    type,
+    duration: Number(duration) || 0.5
+  };
+}
+
+function getTransitionType(transition) {
+  if (!transition) return "none";
+  if (typeof transition === "string") return transition;
+  return transition.type || "none";
+}
+
+function getTransitionDuration(transition) {
+  if (!transition) return 0.5;
+  if (typeof transition === "string") return 0.5;
+  return Number(transition.duration) || 0.5;
+}
+
+function getTransitionOption(type) {
+  return transitionOptions.find(option => option.value === type) || transitionOptions[0];
+}
+
+function formatTransitionDuration(value) {
+  return `${Number(value).toFixed(1).replace(/\.0$/, "")}\ucd08`;
+}
+
+function renderTransitionSummary(transition) {
+  const option = getTransitionOption(getTransitionType(transition));
+  return {
+    icon: option.icon,
+    label: option.label,
+    duration: formatTransitionDuration(getTransitionDuration(transition))
+  };
 }
 
 function getEstimatedSeconds() {
@@ -331,12 +398,16 @@ function renderTimeline() {
   timelineList.className = `timeline-list timeline-zoom-${timelineZoom}`;
   timelineList.innerHTML = photos.map((photo, index) => {
     const effectLabel = photoEffectOptions.find(option => option.value === photo.photoEffect)?.label || "\uc5c6\uc74c";
-    const transitionLabel = transitionOptions.find(option => option.value === (photo.transitionAfter || "none"))?.label || "\uc5c6\uc74c";
+    const transition = renderTransitionSummary(photo.transitionAfter);
     const isActive = photo.id === activePreviewId ? " is-active" : "";
     const transitionBlock = index < photos.length - 1 ? `
       <div class="timeline-transition">
         <span>${index + 1} \u2192 ${index + 2}</span>
-        <button type="button" data-action="open-transition" data-id="${escapeHtml(photo.id)}">${transitionLabel}</button>
+        <button type="button" data-action="open-transition" data-id="${escapeHtml(photo.id)}">
+          <strong>${transition.icon}</strong>
+          <span>${transition.label}</span>
+          <em>${transition.duration}</em>
+        </button>
       </div>
     ` : "";
     return `
@@ -370,16 +441,27 @@ function renderTransitionEditor(photoId) {
     return;
   }
   activeTransitionPhotoId = photoId;
+  const currentType = getTransitionType(photo.transitionAfter);
+  const currentDuration = getTransitionDuration(photo.transitionAfter);
   transitionEditor.classList.remove("is-hidden");
   transitionEditor.innerHTML = `
     <div class="transition-editor-head">
       <strong>\uc804\ud658\ud6a8\uacfc \uc120\ud0dd</strong>
       <button type="button" data-action="close-transition">\ub2eb\uae30</button>
     </div>
+    <label class="transition-duration-control">
+      <span>\uc804\ud658\uc2dc\uac04</span>
+      <select data-action="transition-duration" data-id="${escapeHtml(photo.id)}">
+        ${transitionDurationOptions.map(duration => {
+          const selected = duration === currentDuration ? " selected" : "";
+          return `<option value="${duration}"${selected}>${formatTransitionDuration(duration)}</option>`;
+        }).join("")}
+      </select>
+    </label>
     <div class="transition-option-grid">
       ${transitionOptions.map(option => {
-        const activeClass = option.value === (photo.transitionAfter || "none") ? " is-active" : "";
-        return `<button type="button" class="transition-choice${activeClass}" data-action="choose-transition" data-value="${option.value}">${option.label}</button>`;
+        const activeClass = option.value === currentType ? " is-active" : "";
+        return `<button type="button" class="transition-choice${activeClass}" data-action="choose-transition" data-value="${option.value}"><strong>${option.icon}</strong><span>${option.label}</span></button>`;
       }).join("")}
     </div>
   `;
@@ -432,8 +514,9 @@ async function addFiles(fileList) {
       width: size.width,
       height: size.height,
       durationSeconds: getSecondsPerPhoto(),
+      duration: getSecondsPerPhoto(),
       photoEffect: "none",
-      transitionAfter: defaultTransition
+      transitionAfter: createTransition(defaultTransition, 0.5)
     };
   }));
 
@@ -479,7 +562,8 @@ function movePhotoTo(id, targetId) {
 function normalizeLastTransition() {
   photos.forEach((photo, index) => {
     if (index === photos.length - 1) photo.transitionAfter = null;
-    else if (!photo.transitionAfter) photo.transitionAfter = defaultTransitionInput.value || "fade";
+    else if (!photo.transitionAfter) photo.transitionAfter = createTransition(defaultTransitionInput.value || "fade", 0.5);
+    else if (typeof photo.transitionAfter === "string") photo.transitionAfter = createTransition(photo.transitionAfter, 0.5);
   });
 }
 
@@ -550,15 +634,25 @@ function updatePhotoDuration(photoId, value) {
   const photo = photos.find(item => item.id === photoId);
   if (!photo) return;
   photo.durationSeconds = Number(value) || getSecondsPerPhoto();
+  photo.duration = photo.durationSeconds;
   activePreviewId = photoId;
   renderList();
 }
 
-function updateTransitionAfter(photoId, value) {
+function updateTransitionAfter(photoId, value, duration) {
   const photo = photos.find(item => item.id === photoId);
   if (!photo) return;
-  photo.transitionAfter = value;
+  photo.transitionAfter = createTransition(value, duration || getTransitionDuration(photo.transitionAfter));
   setMessage("\uc0ac\uc9c4 \uc0ac\uc774 \uc804\ud658\ud6a8\uacfc\ub97c \uc218\uc815\ud588\uc2b5\ub2c8\ub2e4.");
+  renderTimeline();
+  renderTransitionEditor(photoId);
+}
+
+function updateTransitionDuration(photoId, value) {
+  const photo = photos.find(item => item.id === photoId);
+  if (!photo) return;
+  photo.transitionAfter = createTransition(getTransitionType(photo.transitionAfter), Number(value));
+  setMessage("\uc804\ud658\uc2dc\uac04\uc744 \uc218\uc815\ud588\uc2b5\ub2c8\ub2e4.");
   renderTimeline();
   renderTransitionEditor(photoId);
 }
@@ -569,7 +663,10 @@ function applyTransitionPreset() {
   const photoEffectPattern = photoEffectPresets[preset] || photoEffectPresets.basic;
   photos.forEach((photo, index) => {
     photo.photoEffect = photoEffectPattern[index % photoEffectPattern.length];
-    if (index < photos.length - 1) photo.transitionAfter = transitionPattern[index % transitionPattern.length];
+    if (index < photos.length - 1) {
+      const transition = transitionPattern[index % transitionPattern.length];
+      photo.transitionAfter = createTransition(transition.type, transition.duration);
+    }
   });
   normalizeLastTransition();
   setMessage("\ud504\ub9ac\uc14b\uc744 \uc801\uc6a9\ud588\uc2b5\ub2c8\ub2e4. \uc0ac\uc9c4\ubcc4 \ud6a8\uacfc\uc640 \uc804\ud658\ud6a8\uacfc\ub294 \ub2e4\uc2dc \uac1c\ubcc4 \uc218\uc815\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.");
@@ -657,13 +754,6 @@ timelineList.addEventListener("click", event => {
   }
 });
 
-timelineList.addEventListener("change", event => {
-  const target = event.target;
-  if (target.matches("select[data-action='transition-after']")) {
-    updateTransitionAfter(target.dataset.id, target.value);
-  }
-});
-
 timelineList.addEventListener("dragstart", event => {
   const item = event.target.closest(".timeline-item");
   if (!item) return;
@@ -697,6 +787,13 @@ transitionEditor.addEventListener("click", event => {
   const choice = event.target.closest("[data-action='choose-transition']");
   if (choice && activeTransitionPhotoId) {
     updateTransitionAfter(activeTransitionPhotoId, choice.dataset.value);
+  }
+});
+
+transitionEditor.addEventListener("change", event => {
+  const target = event.target;
+  if (target.matches("select[data-action='transition-duration']")) {
+    updateTransitionDuration(target.dataset.id, target.value);
   }
 });
 

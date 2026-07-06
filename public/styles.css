@@ -529,12 +529,44 @@ textarea {
   font-weight: 900;
 }
 .timeline-transition button {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-areas:
+    "icon name"
+    "icon time";
+  align-items: center;
+  column-gap: 8px;
   min-height: 42px;
+  padding: 8px 10px;
   border: 1px solid #bfdbfe;
   border-radius: 8px;
   background: #fff;
   color: #1e3a8a;
   font-weight: 900;
+  text-align: left;
+}
+.timeline-transition button strong {
+  grid-area: icon;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 12px;
+}
+.timeline-transition button span {
+  grid-area: name;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timeline-transition button em {
+  grid-area: time;
+  color: #475569;
+  font-size: 12px;
+  font-style: normal;
 }
 .transition-editor {
   margin-top: 14px;
@@ -557,22 +589,65 @@ textarea {
   background: #fff;
   font-weight: 900;
 }
+.transition-duration-control {
+  display: grid;
+  grid-template-columns: 90px minmax(120px, 180px);
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  color: #1e3a8a;
+  font-size: 13px;
+  font-weight: 900;
+}
+.transition-duration-control select {
+  min-height: 38px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  font-weight: 900;
+}
 .transition-option-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 8px;
 }
 .transition-choice {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
   min-height: 42px;
+  padding: 8px 10px;
   border: 1px solid #bfdbfe;
   border-radius: 8px;
   background: #fff;
   color: #334155;
   font-weight: 900;
+  text-align: left;
+}
+.transition-choice strong {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 12px;
+}
+.transition-choice span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .transition-choice.is-active {
   border-color: var(--blue);
   background: var(--blue);
+  color: #fff;
+}
+.transition-choice.is-active strong {
+  background: rgba(255, 255, 255, 0.22);
   color: #fff;
 }
 .is-hidden { display: none; }
