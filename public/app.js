@@ -61,6 +61,12 @@ const outputEstimateList = document.getElementById("outputEstimateList");
 const aiRecommendButton = document.getElementById("aiRecommendButton");
 const recommendationSummary = document.getElementById("recommendationSummary");
 const storyboardList = document.getElementById("storyboardList");
+const outputPreviewVideo = document.getElementById("outputPreviewVideo");
+const outputPreviewEmpty = document.getElementById("outputPreviewEmpty");
+const downloadLatestOutputButton = document.getElementById("downloadLatestOutputButton");
+const refreshOutputsButton = document.getElementById("refreshOutputsButton");
+const outputsSummary = document.getElementById("outputsSummary");
+const outputsList = document.getElementById("outputsList");
 
 const supportedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const autosaveKey = "highlightStudio.autosaveProject";
@@ -182,6 +188,7 @@ let outputFileNameTouched = false;
 let pendingAutosaveData = null;
 let activeRenderJobId = null;
 let renderPollTimer = null;
+let latestOutputFile = null;
 
 const renderStatusLabels = {
   queued: "\ub300\uae30",
@@ -223,6 +230,96 @@ function formatDuration(seconds) {
 function formatDateTime(value) {
   if (!value) return "";
   return new Date(value).toLocaleString("ko-KR", { hour12: false });
+}
+
+function outputUrl(filename) {
+  return `/outputs/${encodeURIComponent(filename)}`;
+}
+
+function outputDownloadUrl(filename) {
+  return `/api/outputs/${encodeURIComponent(filename)}/download`;
+}
+
+function setOutputPreview(file) {
+  latestOutputFile = file || null;
+  if (!outputPreviewVideo || !downloadLatestOutputButton) return;
+  if (!file) {
+    outputPreviewVideo.removeAttribute("src");
+    outputPreviewVideo.load();
+    outputPreviewVideo.parentElement.classList.remove("has-video");
+    downloadLatestOutputButton.href = "#";
+    downloadLatestOutputButton.removeAttribute("download");
+    downloadLatestOutputButton.classList.add("is-disabled");
+    return;
+  }
+  outputPreviewVideo.src = file.url || outputUrl(file.filename);
+  outputPreviewVideo.load();
+  outputPreviewVideo.parentElement.classList.add("has-video");
+  downloadLatestOutputButton.href = file.downloadUrl || outputDownloadUrl(file.filename);
+  downloadLatestOutputButton.download = file.filename;
+  downloadLatestOutputButton.classList.remove("is-disabled");
+}
+
+function renderOutputs(outputs = []) {
+  outputsSummary.textContent = `${outputs.length}개`;
+  if (!outputs.length) {
+    outputsList.innerHTML = `<p class="muted-text">outputs 폴더에 MP4 파일이 없습니다.</p>`;
+    if (!latestOutputFile) setOutputPreview(null);
+    return;
+  }
+  outputsList.innerHTML = outputs.map(file => `
+    <article class="output-item">
+      <div>
+        <strong>${escapeHtml(file.filename)}</strong>
+        <div class="output-meta">
+          <span>${formatDateTime(file.createdAt)}</span>
+          <span>${formatBytes(file.size)}</span>
+        </div>
+      </div>
+      <div class="output-actions">
+        <button type="button" class="secondary-button" data-action="preview-output" data-filename="${escapeHtml(file.filename)}">미리보기</button>
+        <a class="secondary-button" href="${file.downloadUrl}" download="${escapeHtml(file.filename)}">다운로드</a>
+        <button type="button" class="danger-button" data-action="delete-output" data-filename="${escapeHtml(file.filename)}">삭제</button>
+      </div>
+    </article>
+  `).join("");
+  if (!latestOutputFile) setOutputPreview(outputs[0]);
+}
+
+async function loadOutputs(preferredFileName = "") {
+  try {
+    const response = await fetch("/api/outputs");
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "outputs 목록을 불러오지 못했습니다.");
+    const outputs = result.outputs || [];
+    renderOutputs(outputs);
+    const preferred = outputs.find(file => file.filename === preferredFileName);
+    if (preferred) setOutputPreview(preferred);
+    if (!preferredFileName && outputs.length && (!latestOutputFile || !outputs.some(file => file.filename === latestOutputFile.filename))) {
+      setOutputPreview(outputs[0]);
+    }
+    if (!outputs.length) setOutputPreview(null);
+    return outputs;
+  } catch (error) {
+    outputsList.innerHTML = `<p class="muted-text">${escapeHtml(error.message || "outputs 목록을 불러오지 못했습니다.")}</p>`;
+    return [];
+  }
+}
+
+async function deleteOutputFile(filename) {
+  if (!filename) return;
+  const confirmed = window.confirm(`${filename} 파일을 삭제하시겠습니까?`);
+  if (!confirmed) return;
+  try {
+    const response = await fetch(`/api/outputs/${encodeURIComponent(filename)}`, { method: "DELETE" });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "출력 파일을 삭제하지 못했습니다.");
+    if (latestOutputFile?.filename === filename) setOutputPreview(null);
+    await loadOutputs();
+    setMessage(`${filename} 파일을 삭제했습니다.`);
+  } catch (error) {
+    setMessage(error.message || "출력 파일 삭제에 실패했습니다.");
+  }
 }
 
 function safeFileName(value) {
@@ -632,6 +729,7 @@ async function pollRenderStatus(jobId) {
     generateButton.disabled = photos.length === 0;
     if (job.status === "completed") {
       setMessage(`MP4 \uc0dd\uc131 \uc644\ub8cc: ${job.filename} / ${formatDuration(Math.round(job.durationSeconds || 0))} / ${formatBytes(job.bytes || 0)}`);
+      loadOutputs(job.filename);
     } else if (job.status === "canceled") {
       setMessage("MP4 \uc0dd\uc131\uc744 \ucde8\uc18c\ud588\uc2b5\ub2c8\ub2e4. \uc784\uc2dc \ud30c\uc77c\uc740 \uc815\ub9ac\ub429\ub2c8\ub2e4.");
     } else {
@@ -1748,6 +1846,24 @@ generateButton.addEventListener("click", () => {
   renderMp4();
 });
 cancelRenderButton.addEventListener("click", cancelRender);
+refreshOutputsButton.addEventListener("click", () => {
+  loadOutputs();
+});
+outputsList.addEventListener("click", event => {
+  const target = event.target.closest("[data-action]");
+  if (!target) return;
+  const filename = target.dataset.filename;
+  if (target.dataset.action === "preview-output") {
+    setOutputPreview({
+      filename,
+      url: outputUrl(filename),
+      downloadUrl: outputDownloadUrl(filename)
+    });
+  }
+  if (target.dataset.action === "delete-output") {
+    deleteOutputFile(filename);
+  }
+});
 
 fetch("/health")
   .then(res => res.json())
@@ -1757,5 +1873,6 @@ fetch("/health")
 defaultTransitionInput.innerHTML = optionMarkup(transitionOptions, "fade");
 renderStudents();
 renderList();
+loadOutputs();
 restoreAutosaveIfWanted();
 setInterval(autosaveProject, 5 * 60 * 1000);

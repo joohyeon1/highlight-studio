@@ -45,6 +45,28 @@ function makeId(prefix = "video") {
   return `${prefix}-${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`;
 }
 
+function resolveOutputMp4(filename) {
+  const cleanName = path.basename(String(filename || ""));
+  if (!cleanName || cleanName !== filename || path.extname(cleanName).toLowerCase() !== ".mp4") {
+    return null;
+  }
+  const fullPath = path.resolve(OUTPUT_DIR, cleanName);
+  const outputRoot = path.resolve(OUTPUT_DIR) + path.sep;
+  if (!fullPath.startsWith(outputRoot)) return null;
+  return { cleanName, fullPath };
+}
+
+function outputFilePayload(fileName, stat) {
+  return {
+    filename: fileName,
+    size: stat.size,
+    createdAt: stat.birthtime.toISOString(),
+    modifiedAt: stat.mtime.toISOString(),
+    url: `/outputs/${encodeURIComponent(fileName)}`,
+    downloadUrl: `/api/outputs/${encodeURIComponent(fileName)}/download`
+  };
+}
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
   filename: (_req, file, cb) => {
@@ -474,6 +496,45 @@ app.get("/api/render/status/:jobId", (req, res) => {
   const job = renderJobs.get(req.params.jobId);
   if (!job) return res.status(404).json({ ok: false, error: "렌더링 작업을 찾을 수 없습니다." });
   res.json({ ok: true, job: publicJob(job) });
+});
+
+app.get("/api/outputs", async (_req, res) => {
+  try {
+    const entries = await fs.promises.readdir(OUTPUT_DIR, { withFileTypes: true });
+    const files = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".mp4") continue;
+      const resolved = resolveOutputMp4(entry.name);
+      if (!resolved) continue;
+      const stat = await fs.promises.stat(resolved.fullPath);
+      files.push(outputFilePayload(entry.name, stat));
+    }
+    files.sort((a, b) => new Date(b.modifiedAt) - new Date(a.modifiedAt));
+    res.json({ ok: true, outputs: files });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message || "출력 파일 목록을 불러오지 못했습니다." });
+  }
+});
+
+app.get("/api/outputs/:filename/download", (req, res) => {
+  const resolved = resolveOutputMp4(req.params.filename);
+  if (!resolved) return res.status(400).json({ ok: false, error: "MP4 출력 파일명만 사용할 수 있습니다." });
+  fs.stat(resolved.fullPath, (error, stat) => {
+    if (error || !stat.isFile()) return res.status(404).json({ ok: false, error: "출력 파일을 찾을 수 없습니다." });
+    res.download(resolved.fullPath, resolved.cleanName);
+  });
+});
+
+app.delete("/api/outputs/:filename", async (req, res) => {
+  const resolved = resolveOutputMp4(req.params.filename);
+  if (!resolved) return res.status(400).json({ ok: false, error: "MP4 출력 파일명만 삭제할 수 있습니다." });
+  try {
+    await fs.promises.unlink(resolved.fullPath);
+    res.json({ ok: true, filename: resolved.cleanName });
+  } catch (error) {
+    if (error.code === "ENOENT") return res.status(404).json({ ok: false, error: "삭제할 출력 파일을 찾을 수 없습니다." });
+    res.status(500).json({ ok: false, error: error.message || "출력 파일을 삭제하지 못했습니다." });
+  }
 });
 
 app.post("/api/render/cancel/:jobId", (req, res) => {
