@@ -89,7 +89,7 @@ function outputFilePayload(fileName, stat) {
 }
 
 function getPublicBaseUrl(req) {
-  const configured = String(process.env.PUBLIC_SHARE_BASE_URL || process.env.HIGHLIGHT_PUBLIC_URL || "").trim();
+  const configured = String(process.env.APP_URL || process.env.PUBLIC_SHARE_BASE_URL || process.env.HIGHLIGHT_PUBLIC_URL || "").trim();
   if (configured) return configured.replace(/\/+$/, "");
   return `${req.protocol}://${req.get("host")}`;
 }
@@ -106,8 +106,8 @@ function createShareInfo(req, fileName) {
     description: "Highlight Studio에서 생성한 태권도 하이라이트 영상입니다.",
     thumbnailUrl: `${baseUrl}/share-thumbnail.svg`,
     kakao: {
-      ready: Boolean(process.env.KAKAO_JAVASCRIPT_KEY || process.env.KAKAO_SDK_KEY),
-      javascriptKeyConfigured: Boolean(process.env.KAKAO_JAVASCRIPT_KEY),
+      ready: Boolean(process.env.KAKAO_JS_KEY || process.env.KAKAO_JAVASCRIPT_KEY || process.env.KAKAO_SDK_KEY),
+      javascriptKeyConfigured: Boolean(process.env.KAKAO_JS_KEY || process.env.KAKAO_JAVASCRIPT_KEY),
       sdkKeyConfigured: Boolean(process.env.KAKAO_SDK_KEY)
     }
   };
@@ -569,6 +569,19 @@ app.use(express.static(PUBLIC_DIR));
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, app: "Highlight Studio", port: PORT, ffmpeg: ffmpegPath });
+});
+
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    app: "Highlight Studio",
+    version: APP_VERSION,
+    port: PORT,
+    environment: process.env.NODE_ENV || "development",
+    storageMode: "local",
+    firebase: false,
+    firestore: false
+  });
 });
 
 app.post("/api/auth/login", (req, res) => {
