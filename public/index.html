@@ -135,16 +135,77 @@
         </label>
         <label>&#49324;&#51652;&#45817; &#49884;&#44036;
           <select id="secondsInput">
+            <option value="0.5">0.5&#52488;</option>
             <option value="1">1&#52488;</option>
             <option value="2" selected>2&#52488;</option>
             <option value="3">3&#52488;</option>
-            <option value="4">4&#52488;</option>
+            <option value="5">5&#52488;</option>
           </select>
         </label>
         <label>BGM
           <input id="bgmInput" type="file" accept="audio/*">
         </label>
         <div id="bgmName" class="bgm-name">&#49440;&#53469;&#46108; BGM &#50630;&#51020;</div>
+      </div>
+    </section>
+
+    <section class="panel output-panel">
+      <div class="panel-head">
+        <div>
+          <h2>&#52636;&#47141; &#49444;&#51221;</h2>
+          <p>MP4 &#49373;&#49457; &#51204;&#50640; &#54644;&#49345;&#46020;, FPS, &#54408;&#51656;, &#54028;&#51068;&#47749;, &#51200;&#51109; &#50948;&#52824;&#47484; &#51456;&#48708;&#54633;&#45768;&#45796;.</p>
+        </div>
+      </div>
+      <div class="output-layout">
+        <div class="output-form">
+          <label>&#52636;&#47141; &#54644;&#49345;&#46020;
+            <select id="outputResolutionInput">
+              <option value="1080x1920">1080 x 1920 (&#49464;&#47196; &#49660;&#52768;)</option>
+              <option value="1920x1080">1920 x 1080 (&#44032;&#47196;)</option>
+              <option value="1080x1080">1080 x 1080 (&#51221;&#49324;&#44033;&#54805;)</option>
+              <option value="custom">&#49324;&#50857;&#51088; &#51648;&#51221;</option>
+            </select>
+          </label>
+          <div id="customResolutionFields" class="custom-resolution is-hidden">
+            <label>&#44032;&#47196;
+              <input id="customWidthInput" type="number" min="320" max="7680" step="10" value="1080">
+            </label>
+            <label>&#49464;&#47196;
+              <input id="customHeightInput" type="number" min="320" max="7680" step="10" value="1920">
+            </label>
+          </div>
+          <label>FPS
+            <select id="outputFpsInput">
+              <option value="24">24</option>
+              <option value="30" selected>30</option>
+              <option value="60">60</option>
+            </select>
+          </label>
+          <label>&#52636;&#47141; &#54408;&#51656;
+            <select id="outputQualityInput">
+              <option value="standard">&#44592;&#48376;</option>
+              <option value="high">&#44256;&#54868;&#51656;</option>
+              <option value="best">&#52572;&#44256;&#54868;&#51656;</option>
+            </select>
+          </label>
+          <label>&#52636;&#47141; &#54805;&#49885;
+            <select id="outputFormatInput">
+              <option value="mp4" selected>MP4</option>
+              <option value="mov" disabled>MOV (&#52628;&#54980;)</option>
+              <option value="gif" disabled>GIF (&#52628;&#54980;)</option>
+            </select>
+          </label>
+          <label>&#52636;&#47141; &#54028;&#51068;&#47749;
+            <input id="outputFileNameInput" type="text" maxlength="120">
+          </label>
+          <label>&#51200;&#51109; &#50948;&#52824;
+            <input id="outputDirectoryInput" type="text" value="outputs/">
+          </label>
+        </div>
+        <aside class="output-summary">
+          <h3>&#50696;&#49345; &#44208;&#44284;</h3>
+          <dl id="outputEstimateList"></dl>
+        </aside>
       </div>
     </section>
 

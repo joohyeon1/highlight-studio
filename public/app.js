@@ -39,6 +39,16 @@ const saveProjectButton = document.getElementById("saveProjectButton");
 const saveAsProjectButton = document.getElementById("saveAsProjectButton");
 const projectInput = document.getElementById("projectInput");
 const projectStatus = document.getElementById("projectStatus");
+const outputResolutionInput = document.getElementById("outputResolutionInput");
+const customResolutionFields = document.getElementById("customResolutionFields");
+const customWidthInput = document.getElementById("customWidthInput");
+const customHeightInput = document.getElementById("customHeightInput");
+const outputFpsInput = document.getElementById("outputFpsInput");
+const outputQualityInput = document.getElementById("outputQualityInput");
+const outputFormatInput = document.getElementById("outputFormatInput");
+const outputFileNameInput = document.getElementById("outputFileNameInput");
+const outputDirectoryInput = document.getElementById("outputDirectoryInput");
+const outputEstimateList = document.getElementById("outputEstimateList");
 
 const supportedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const autosaveKey = "highlightStudio.autosaveProject";
@@ -155,6 +165,7 @@ let projectCreatedAt = new Date().toISOString();
 let projectModifiedAt = projectCreatedAt;
 let currentProjectFileName = "";
 let bgmReference = null;
+let outputFileNameTouched = false;
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => ({
@@ -196,6 +207,104 @@ function safeFileName(value) {
     .replace(/[\\/:*?"<>|]+/g, "-")
     .replace(/\s+/g, "-")
     .slice(0, 80) || "highlight-studio-project";
+}
+
+function todayStamp() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function createDefaultOutputFileName() {
+  return `${safeFileName(titleInput.value || projectName)}_${todayStamp()}.mp4`;
+}
+
+function getOutputResolution() {
+  if (outputResolutionInput.value === "custom") {
+    return {
+      mode: "custom",
+      width: Number(customWidthInput.value) || 1080,
+      height: Number(customHeightInput.value) || 1920,
+      label: "\uc0ac\uc6a9\uc790 \uc9c0\uc815"
+    };
+  }
+  const [width, height] = outputResolutionInput.value.split("x").map(Number);
+  const labels = {
+    "1080x1920": "\uc138\ub85c \uc1fc\uce20",
+    "1920x1080": "\uac00\ub85c",
+    "1080x1080": "\uc815\uc0ac\uac01\ud615"
+  };
+  return {
+    mode: outputResolutionInput.value,
+    width,
+    height,
+    label: labels[outputResolutionInput.value] || ""
+  };
+}
+
+function getOutputQualityMultiplier() {
+  return {
+    standard: 0.018,
+    high: 0.03,
+    best: 0.045
+  }[outputQualityInput.value] || 0.018;
+}
+
+function estimateOutputSize() {
+  const resolution = getOutputResolution();
+  const seconds = Math.max(1, getEstimatedSeconds());
+  const fps = Number(outputFpsInput.value) || 30;
+  const pixels = resolution.width * resolution.height;
+  const bytes = pixels * seconds * fps * getOutputQualityMultiplier();
+  return Math.max(1, Math.round(bytes));
+}
+
+function getCaptionCount() {
+  const sceneCaptionCount = photos.filter(photo => normalizeCaption(photo.caption).text.trim()).length;
+  const opening = openingCaptionInput.value.trim() ? 1 : 0;
+  const ending = endingCaptionInput.value.trim() ? 1 : 0;
+  return sceneCaptionCount + opening + ending;
+}
+
+function getTransitionCount() {
+  return photos.filter(photo => photo.transitionAfter && getTransitionType(photo.transitionAfter) !== "none").length;
+}
+
+function getOutputOptions() {
+  const resolution = getOutputResolution();
+  return {
+    resolution,
+    fps: Number(outputFpsInput.value) || 30,
+    quality: outputQualityInput.value,
+    format: outputFormatInput.value,
+    defaultPhotoDuration: getSecondsPerPhoto(),
+    fileName: outputFileNameInput.value.trim() || createDefaultOutputFileName(),
+    directory: outputDirectoryInput.value.trim() || "outputs/",
+    estimatedSize: estimateOutputSize(),
+    generationEnabled: false
+  };
+}
+
+function updateOutputFileName() {
+  if (!outputFileNameTouched) outputFileNameInput.value = createDefaultOutputFileName();
+}
+
+function renderOutputEstimate() {
+  if (!outputEstimateList) return;
+  updateOutputFileName();
+  const output = getOutputOptions();
+  customResolutionFields.classList.toggle("is-hidden", outputResolutionInput.value !== "custom");
+  outputEstimateList.innerHTML = `
+    <div><dt>\uc608\uc0c1 \uc601\uc0c1 \uae38\uc774</dt><dd>${formatDuration(getEstimatedSeconds())}</dd></div>
+    <div><dt>\uc0ac\uc9c4 \uac1c\uc218</dt><dd>${photos.length}\uc7a5</dd></div>
+    <div><dt>\uc790\ub9c9 \uac1c\uc218</dt><dd>${getCaptionCount()}\uac1c</dd></div>
+    <div><dt>\uc804\ud658\ud6a8\uacfc \uac1c\uc218</dt><dd>${getTransitionCount()}\uac1c</dd></div>
+    <div><dt>BGM \uc0ac\uc6a9 \uc5ec\ubd80</dt><dd>${bgmReference ? "\uc0ac\uc6a9" : "\uc0ac\uc6a9 \uc548 \ud568"}</dd></div>
+    <div><dt>\uc608\uc0c1 \ucd9c\ub825 \ud574\uc0c1\ub3c4</dt><dd>${output.resolution.width} x ${output.resolution.height}</dd></div>
+    <div><dt>\uc608\uc0c1 \ud30c\uc77c \ud06c\uae30</dt><dd>${formatBytes(output.estimatedSize)}</dd></div>
+  `;
 }
 
 function createPhotoPlaceholder(photo) {
@@ -314,10 +423,7 @@ function createProjectData() {
       openingCaption: openingCaptionInput.value,
       endingCaption: endingCaptionInput.value,
       bgm: bgmReference,
-      outputOptions: {
-        format: "mp4",
-        generationEnabled: false
-      }
+      outputOptions: getOutputOptions()
     },
     students: students.map(student => ({ ...student })),
     photos: photos.map(serializePhoto)
@@ -341,6 +447,17 @@ function restoreProjectData(data) {
   endingCaptionInput.value = data.video?.endingCaption || "";
   bgmReference = data.video?.bgm || null;
   bgmName.textContent = bgmReference?.name ? `BGM: ${bgmReference.name}` : "\uc120\ud0dd\ub41c BGM \uc5c6\uc74c";
+  const outputOptions = data.video?.outputOptions || {};
+  const resolutionMode = outputOptions.resolution?.mode || "1080x1920";
+  outputResolutionInput.value = ["1080x1920", "1920x1080", "1080x1080", "custom"].includes(resolutionMode) ? resolutionMode : "1080x1920";
+  customWidthInput.value = outputOptions.resolution?.width || 1080;
+  customHeightInput.value = outputOptions.resolution?.height || 1920;
+  outputFpsInput.value = String(outputOptions.fps || 30);
+  outputQualityInput.value = outputOptions.quality || "standard";
+  outputFormatInput.value = outputOptions.format || "mp4";
+  outputFileNameInput.value = outputOptions.fileName || createDefaultOutputFileName();
+  outputFileNameTouched = Boolean(outputOptions.fileName);
+  outputDirectoryInput.value = outputOptions.directory || "outputs/";
 
   students = (data.students || []).map((student, index) => ({
     id: student.id || `student-${Date.now()}-${index}`,
@@ -387,6 +504,7 @@ function restoreProjectData(data) {
   setProjectStatus(`\ubd88\ub7ec\uc634: ${formatDateTime(projectModifiedAt)}`);
   renderStudents();
   renderList();
+  renderOutputEstimate();
 }
 
 function setProjectStatus(text) {
@@ -431,6 +549,7 @@ function updateStats() {
   generateButton.disabled = photos.length === 0;
   updateStudentPrep();
   updateTimelineStatus();
+  renderOutputEstimate();
 }
 
 function setMessage(text) {
@@ -496,11 +615,21 @@ function newProject() {
   endingCaptionInput.value = "";
   bgmInput.value = "";
   bgmName.textContent = "\uc120\ud0dd\ub41c BGM \uc5c6\uc74c";
+  outputResolutionInput.value = "1080x1920";
+  customWidthInput.value = "1080";
+  customHeightInput.value = "1920";
+  outputFpsInput.value = "30";
+  outputQualityInput.value = "standard";
+  outputFormatInput.value = "mp4";
+  outputDirectoryInput.value = "outputs/";
+  outputFileNameTouched = false;
+  updateOutputFileName();
   localStorage.removeItem(autosaveKey);
   setProjectStatus("\uc0c8 \ud504\ub85c\uc81d\ud2b8");
   setMessage("\uc0c8 \ud504\ub85c\uc81d\ud2b8\ub97c \uc2dc\uc791\ud588\uc2b5\ub2c8\ub2e4.");
   renderStudents();
   renderList();
+  renderOutputEstimate();
 }
 
 function openProjectFile(file) {
@@ -1098,6 +1227,7 @@ largePreview.addEventListener("input", event => {
   const target = event.target;
   if (target.matches("textarea[data-action='property-caption-text']")) {
     updatePhotoCaption(target.dataset.id, "text", target.value, { render: false });
+    renderOutputEstimate();
   }
 });
 
@@ -1200,6 +1330,8 @@ clearAllButton.addEventListener("click", clearAllPhotos);
 secondsInput.addEventListener("change", updateStats);
 titleInput.addEventListener("input", () => {
   projectName = titleInput.value.trim() || projectName;
+  updateOutputFileName();
+  renderOutputEstimate();
 });
 bgmInput.addEventListener("change", () => {
   const file = bgmInput.files?.[0];
@@ -1212,6 +1344,25 @@ bgmInput.addEventListener("change", () => {
   } : null;
   bgmName.textContent = bgmReference ? `BGM: ${bgmReference.name}` : "\uc120\ud0dd\ub41c BGM \uc5c6\uc74c";
   setMessage(bgmReference ? "BGM \ucc38\uc870 \uc815\ubcf4\ub97c \ucd94\uac00\ud588\uc2b5\ub2c8\ub2e4. \uc6d0\ubcf8 \uc74c\uc6d0\uc740 .hsp\uc5d0 \ud3ec\ud568\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4." : "BGM \uc120\ud0dd\uc744 \ud574\uc81c\ud588\uc2b5\ub2c8\ub2e4.");
+  renderOutputEstimate();
+});
+openingCaptionInput.addEventListener("input", renderOutputEstimate);
+endingCaptionInput.addEventListener("input", renderOutputEstimate);
+[
+  outputResolutionInput,
+  customWidthInput,
+  customHeightInput,
+  outputFpsInput,
+  outputQualityInput,
+  outputFormatInput,
+  outputDirectoryInput
+].forEach(input => {
+  input.addEventListener("input", renderOutputEstimate);
+  input.addEventListener("change", renderOutputEstimate);
+});
+outputFileNameInput.addEventListener("input", () => {
+  outputFileNameTouched = true;
+  renderOutputEstimate();
 });
 addStudentButton.addEventListener("click", addStudent);
 studentNameInput.addEventListener("keydown", event => {
