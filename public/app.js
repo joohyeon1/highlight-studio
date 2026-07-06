@@ -67,6 +67,9 @@ const downloadLatestOutputButton = document.getElementById("downloadLatestOutput
 const refreshOutputsButton = document.getElementById("refreshOutputsButton");
 const outputsSummary = document.getElementById("outputsSummary");
 const outputsList = document.getElementById("outputsList");
+const refreshQueueButton = document.getElementById("refreshQueueButton");
+const renderQueueSummary = document.getElementById("renderQueueSummary");
+const renderQueueList = document.getElementById("renderQueueList");
 
 const supportedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const autosaveKey = "highlightStudio.autosaveProject";
@@ -188,10 +191,12 @@ let outputFileNameTouched = false;
 let pendingAutosaveData = null;
 let activeRenderJobId = null;
 let renderPollTimer = null;
+let queuePollTimer = null;
 let latestOutputFile = null;
 
 const renderStatusLabels = {
   queued: "\ub300\uae30",
+  preparing: "\uc900\ube44 \uc911",
   rendering: "\ub80c\ub354\ub9c1 \uc911",
   completed: "\uc644\ub8cc",
   failed: "\uc2e4\ud328",
@@ -319,6 +324,77 @@ async function deleteOutputFile(filename) {
     setMessage(`${filename} 파일을 삭제했습니다.`);
   } catch (error) {
     setMessage(error.message || "출력 파일 삭제에 실패했습니다.");
+  }
+}
+
+function renderQueueJobs(jobs = [], activeJobId = "") {
+  const queuedCount = jobs.filter(job => job.status === "queued").length;
+  const runningJob = jobs.find(job => job.jobId === activeJobId || ["preparing", "rendering"].includes(job.status));
+  renderQueueSummary.textContent = runningJob
+    ? `현재 작업: ${runningJob.jobId} / 대기 ${queuedCount}개 / 전체 ${jobs.length}개`
+    : `대기 작업 ${queuedCount}개 / 전체 ${jobs.length}개`;
+
+  if (!jobs.length) {
+    renderQueueList.innerHTML = `<p class="muted-text">렌더링 대기열이 비어 있습니다.</p>`;
+    return;
+  }
+
+  renderQueueList.innerHTML = jobs.map((job, index) => {
+    const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
+    const canCancel = ["queued", "preparing", "rendering"].includes(job.status);
+    const position = job.status === "queued" ? `대기 ${job.queuePosition || index + 1}번째` : `#${index + 1}`;
+    const fileLabel = job.filename || job.currentPhotoName || "결과 파일 대기";
+    return `
+      <article class="queue-job">
+        <div>
+          <strong>${escapeHtml(fileLabel)}</strong>
+          <div class="queue-job-meta">
+            <span>${escapeHtml(position)}</span>
+            <span>생성 ${formatDateTime(job.createdAt)}</span>
+            ${job.startedAt ? `<span>시작 ${formatDateTime(job.startedAt)}</span>` : ""}
+            ${job.completedAt ? `<span>완료 ${formatDateTime(job.completedAt)}</span>` : ""}
+            ${job.error ? `<span>${escapeHtml(job.error)}</span>` : ""}
+          </div>
+          <div class="queue-job-progress">
+            <span>${progress}%</span>
+            <div class="queue-progress-bar"><div style="width:${progress}%"></div></div>
+          </div>
+        </div>
+        <div class="queue-actions">
+          <span class="status-badge ${escapeHtml(job.status)}">${renderStatusLabels[job.status] || job.status}</span>
+          ${canCancel ? `<button type="button" class="secondary-button" data-action="cancel-queue-job" data-job-id="${escapeHtml(job.jobId)}">취소</button>` : ""}
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+async function loadRenderQueue() {
+  try {
+    const response = await fetch("/api/render/queue");
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "렌더링 대기열을 불러오지 못했습니다.");
+    renderQueueJobs(result.jobs || [], result.activeJobId || "");
+    return result.jobs || [];
+  } catch (error) {
+    renderQueueList.innerHTML = `<p class="muted-text">${escapeHtml(error.message || "렌더링 대기열을 불러오지 못했습니다.")}</p>`;
+    return [];
+  }
+}
+
+async function cancelQueueJob(jobId) {
+  if (!jobId) return;
+  try {
+    const response = await fetch(`/api/render/cancel/${encodeURIComponent(jobId)}`, { method: "POST" });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "렌더링 취소에 실패했습니다.");
+    if (activeRenderJobId === jobId) {
+      await pollRenderStatus(jobId);
+    }
+    await loadRenderQueue();
+    setMessage("렌더링 작업 취소를 요청했습니다.");
+  } catch (error) {
+    setMessage(error.message || "렌더링 작업 취소에 실패했습니다.");
   }
 }
 
@@ -722,6 +798,7 @@ async function pollRenderStatus(jobId) {
   if (!response.ok || !result.ok) throw new Error(result.error || "\ub80c\ub354\ub9c1 \uc0c1\ud0dc\ub97c \ud655\uc778\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.");
   const job = result.job;
   updateRenderStatus(job);
+  loadRenderQueue();
   if (["completed", "failed", "canceled"].includes(job.status)) {
     stopRenderPolling();
     activeRenderJobId = null;
@@ -758,7 +835,7 @@ async function renderMp4() {
   updateRenderStatus({ status: "queued", progress: 1, currentPhoto: 0, currentPhotoName: "", totalPhotos: renderablePhotos.length, logs: [{ time: new Date().toISOString(), message: "\ub80c\ub354\ub9c1 \uc694\uccad \uc900\ube44" }] });
   generateButton.disabled = true;
   cancelRenderButton.disabled = true;
-  setMessage("MP4 \uc0dd\uc131 \uc911\uc785\ub2c8\ub2e4. \uc0ac\uc9c4 \uc218\uc640 \ud574\uc0c1\ub3c4\uc5d0 \ub530\ub77c \uc2dc\uac04\uc774 \uac78\ub9b4 \uc218 \uc788\uc2b5\ub2c8\ub2e4.");
+  setMessage("MP4 \uc0dd\uc131 \uc694\uccad\uc744 \ub300\uae30\uc5f4\uc5d0 \ucd94\uac00\ud558\ub294 \uc911\uc785\ub2c8\ub2e4.");
 
   try {
     const response = await fetch("/api/render", {
@@ -769,6 +846,9 @@ async function renderMp4() {
     if (!response.ok || !result.ok) throw new Error(result.error || "MP4 \uc0dd\uc131\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
     activeRenderJobId = result.jobId;
     cancelRenderButton.disabled = false;
+    generateButton.disabled = photos.length === 0;
+    setMessage(`MP4 \uc0dd\uc131 \uc791\uc5c5\uc744 \ub300\uae30\uc5f4\uc5d0 \ucd94\uac00\ud588\uc2b5\ub2c8\ub2e4: ${result.jobId}`);
+    await loadRenderQueue();
     await pollRenderStatus(activeRenderJobId);
     renderPollTimer = setInterval(() => {
       if (!activeRenderJobId) return;
@@ -794,6 +874,7 @@ async function cancelRender() {
   try {
     await fetch(`/api/render/cancel/${encodeURIComponent(activeRenderJobId)}`, { method: "POST" });
     await pollRenderStatus(activeRenderJobId);
+    await loadRenderQueue();
   } catch (error) {
     setMessage(error.message || "\ub80c\ub354\ub9c1 \ucde8\uc18c\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
   }
@@ -1846,6 +1927,16 @@ generateButton.addEventListener("click", () => {
   renderMp4();
 });
 cancelRenderButton.addEventListener("click", cancelRender);
+refreshQueueButton.addEventListener("click", () => {
+  loadRenderQueue();
+});
+renderQueueList.addEventListener("click", event => {
+  const target = event.target.closest("[data-action]");
+  if (!target) return;
+  if (target.dataset.action === "cancel-queue-job") {
+    cancelQueueJob(target.dataset.jobId);
+  }
+});
 refreshOutputsButton.addEventListener("click", () => {
   loadOutputs();
 });
@@ -1874,5 +1965,7 @@ defaultTransitionInput.innerHTML = optionMarkup(transitionOptions, "fade");
 renderStudents();
 renderList();
 loadOutputs();
+loadRenderQueue();
+queuePollTimer = setInterval(loadRenderQueue, 2000);
 restoreAutosaveIfWanted();
 setInterval(autosaveProject, 5 * 60 * 1000);

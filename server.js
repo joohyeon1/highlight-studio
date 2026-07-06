@@ -15,6 +15,8 @@ const PHOTO_SECONDS = Number(process.env.HIGHLIGHT_PHOTO_SECONDS || 2);
 const SUPPORTED_RENDER_TRANSITIONS = new Set(["none", "fade", "crossfade"]);
 const SUPPORTED_RENDER_EFFECTS = new Set(["none", "slowZoomIn", "slowZoomOut"]);
 const renderJobs = new Map();
+const renderQueue = [];
+let activeRenderJobId = null;
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -98,6 +100,12 @@ function updateJob(job, patch = {}) {
   Object.assign(job, patch, { updatedAt: new Date().toISOString() });
 }
 
+function getQueuePosition(job) {
+  if (!job || job.status !== "queued") return 0;
+  const index = renderQueue.findIndex(item => item.jobId === job.jobId);
+  return index >= 0 ? index + 1 : 0;
+}
+
 function publicJob(job) {
   if (!job) return null;
   return {
@@ -113,9 +121,31 @@ function publicJob(job) {
     bytes: job.bytes,
     error: job.error,
     logs: job.logs,
+    queuePosition: getQueuePosition(job),
     createdAt: job.createdAt,
+    startedAt: job.startedAt,
+    completedAt: job.completedAt,
     updatedAt: job.updatedAt
   };
+}
+
+function publicQueue() {
+  return Array.from(renderJobs.values())
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    .map(job => ({
+      jobId: job.jobId,
+      status: job.status,
+      progress: job.progress,
+      currentPhoto: job.currentPhoto,
+      currentPhotoName: job.currentPhotoName,
+      totalPhotos: job.totalPhotos,
+      queuePosition: getQueuePosition(job),
+      createdAt: job.createdAt,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+      filename: job.filename,
+      error: job.error
+    }));
 }
 
 function scheduleJobCleanup(jobId) {
@@ -261,7 +291,7 @@ function buildSceneFilter(photo, width, height, fps, duration) {
 }
 
 async function createRenderFromProject(project, files, job) {
-  updateJob(job, { status: "rendering", progress: 2 });
+  updateJob(job, { status: "preparing", progress: 2, startedAt: new Date().toISOString() });
   pushJobLog(job, "FFmpeg 설치 여부 확인 시작");
   const ffmpegReady = await checkFfmpeg();
   if (!ffmpegReady) throw new Error("FFmpeg를 실행할 수 없습니다. 서버 PC에 FFmpeg를 설치하거나 @ffmpeg-installer/ffmpeg 패키지를 확인해 주세요.");
@@ -269,7 +299,7 @@ async function createRenderFromProject(project, files, job) {
 
   const renderPhotos = getRenderPhotos(project, files);
   if (!renderPhotos.length) throw new Error("선택된 사진 파일이 없습니다. 프로젝트를 불러온 경우 원본 사진을 다시 업로드해 주세요.");
-  updateJob(job, { totalPhotos: renderPhotos.length, progress: 5 });
+  updateJob(job, { status: "rendering", totalPhotos: renderPhotos.length, progress: 5 });
   pushJobLog(job, `입력 파일 확인: ${renderPhotos.length}장`);
 
   const jobId = makeId("render");
@@ -346,6 +376,59 @@ async function createRenderFromProject(project, files, job) {
     fs.rm(workDir, { recursive: true, force: true }, () => {});
     pushJobLog(job, "임시 파일 정리 완료");
   }
+}
+
+function removeQueuedJob(jobId) {
+  const index = renderQueue.findIndex(item => item.jobId === jobId);
+  if (index >= 0) return renderQueue.splice(index, 1)[0];
+  return null;
+}
+
+function enqueueRenderJob(job) {
+  renderQueue.push(job);
+  pushJobLog(job, `렌더링 대기열 추가: ${getQueuePosition(job)}번째`);
+  processRenderQueue();
+}
+
+function processRenderQueue() {
+  if (activeRenderJobId) return;
+  const nextJob = renderQueue.shift();
+  if (!nextJob) return;
+  if (nextJob.canceled || nextJob.status === "canceled") {
+    process.nextTick(processRenderQueue);
+    return;
+  }
+  activeRenderJobId = nextJob.jobId;
+  pushJobLog(nextJob, "대기열에서 렌더링 시작");
+  createRenderFromProject(nextJob.project, nextJob.files || [], nextJob)
+    .then(result => {
+      if (nextJob.canceled) return;
+      updateJob(nextJob, {
+        status: "completed",
+        progress: 100,
+        filename: result.filename,
+        downloadUrl: result.downloadUrl,
+        durationSeconds: result.durationSeconds,
+        bytes: result.bytes,
+        completedAt: new Date().toISOString()
+      });
+      scheduleJobCleanup(nextJob.jobId);
+    })
+    .catch(error => {
+      updateJob(nextJob, {
+        status: nextJob.canceled ? "canceled" : "failed",
+        error: error.message || "MP4 생성에 실패했습니다.",
+        progress: nextJob.canceled ? nextJob.progress : 0,
+        completedAt: new Date().toISOString()
+      });
+      pushJobLog(nextJob, `오류 메시지: ${nextJob.error}`);
+      for (const file of nextJob.files || []) fs.rm(file.path, { force: true }, () => {});
+      scheduleJobCleanup(nextJob.jobId);
+    })
+    .finally(() => {
+      activeRenderJobId = null;
+      processRenderQueue();
+    });
 }
 
 async function createVideoFromPhotos(files, options = {}) {
@@ -448,41 +531,22 @@ app.post("/api/render", upload.array("photos", MAX_PHOTOS), async (req, res) => 
       bytes: 0,
       error: "",
       logs: [{ time: now, message: "렌더링 작업 대기" }],
+      project,
+      files: req.files || [],
       currentProcess: null,
       canceled: false,
       createdAt: now,
+      startedAt: "",
+      completedAt: "",
       updatedAt: now
     };
     renderJobs.set(jobId, job);
+    enqueueRenderJob(job);
     res.status(202).json({
       ok: true,
       jobId,
       statusUrl: `/api/render/status/${encodeURIComponent(jobId)}`
     });
-
-    createRenderFromProject(project, req.files || [], job)
-      .then(result => {
-        if (job.canceled) return;
-        updateJob(job, {
-          status: "completed",
-          progress: 100,
-          filename: result.filename,
-          downloadUrl: result.downloadUrl,
-          durationSeconds: result.durationSeconds,
-          bytes: result.bytes
-        });
-        scheduleJobCleanup(jobId);
-      })
-      .catch(error => {
-        updateJob(job, {
-          status: job.canceled ? "canceled" : "failed",
-          error: error.message || "MP4 생성에 실패했습니다.",
-          progress: job.canceled ? job.progress : 0
-        });
-        pushJobLog(job, `오류 메시지: ${job.error}`);
-        for (const file of req.files || []) fs.rm(file.path, { force: true }, () => {});
-        scheduleJobCleanup(jobId);
-      });
   } catch (error) {
     for (const file of req.files || []) fs.rm(file.path, { force: true }, () => {});
     res.status(500).json({
@@ -496,6 +560,15 @@ app.get("/api/render/status/:jobId", (req, res) => {
   const job = renderJobs.get(req.params.jobId);
   if (!job) return res.status(404).json({ ok: false, error: "렌더링 작업을 찾을 수 없습니다." });
   res.json({ ok: true, job: publicJob(job) });
+});
+
+app.get("/api/render/queue", (_req, res) => {
+  res.json({
+    ok: true,
+    activeJobId: activeRenderJobId,
+    queuedCount: renderQueue.filter(job => job.status === "queued").length,
+    jobs: publicQueue()
+  });
 });
 
 app.get("/api/outputs", async (_req, res) => {
@@ -544,13 +617,22 @@ app.post("/api/render/cancel/:jobId", (req, res) => {
     return res.json({ ok: true, job: publicJob(job) });
   }
   job.canceled = true;
-  updateJob(job, { status: "canceled" });
   pushJobLog(job, "사용자 취소 요청");
+  if (job.status === "queued") {
+    removeQueuedJob(job.jobId);
+    updateJob(job, { status: "canceled", completedAt: new Date().toISOString() });
+    for (const file of job.files || []) fs.rm(file.path, { force: true }, () => {});
+    pushJobLog(job, "대기 중 작업 취소 완료");
+    scheduleJobCleanup(job.jobId);
+    return res.json({ ok: true, job: publicJob(job) });
+  }
+  updateJob(job, { status: "canceled", completedAt: new Date().toISOString() });
   if (job.currentProcess) {
     try {
       job.currentProcess.kill("SIGTERM");
     } catch (_) {}
   }
+  processRenderQueue();
   res.json({ ok: true, job: publicJob(job) });
 });
 
