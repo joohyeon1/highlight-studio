@@ -8,6 +8,16 @@
 </head>
 <body>
   <main class="studio-shell">
+    <nav class="project-menu" aria-label="&#54532;&#47196;&#51229;&#53944; &#54028;&#51068; &#47700;&#45684;">
+      <div class="project-menu-title">&#54028;&#51068;</div>
+      <button id="newProjectButton" type="button">&#49352; &#54532;&#47196;&#51229;&#53944;</button>
+      <button id="openProjectButton" type="button">&#54532;&#47196;&#51229;&#53944; &#50676;&#44592;</button>
+      <button id="saveProjectButton" type="button">&#54532;&#47196;&#51229;&#53944; &#51200;&#51109;</button>
+      <button id="saveAsProjectButton" type="button">&#45796;&#47480; &#51060;&#47492;&#51004;&#47196; &#51200;&#51109;</button>
+      <span id="projectStatus" class="project-status">&#51088;&#46041; &#51200;&#51109; &#45824;&#44592;</span>
+      <input id="projectInput" type="file" accept=".hsp,application/json" hidden>
+    </nav>
+
     <section class="hero">
       <div>
         <p class="eyebrow">4-4&#45800;&#44228; - &#51088;&#47561; &#54200;&#51665;&#44592;</p>
@@ -131,6 +141,10 @@
             <option value="4">4&#52488;</option>
           </select>
         </label>
+        <label>BGM
+          <input id="bgmInput" type="file" accept="audio/*">
+        </label>
+        <div id="bgmName" class="bgm-name">&#49440;&#53469;&#46108; BGM &#50630;&#51020;</div>
       </div>
     </section>
 

@@ -26,6 +26,44 @@ button { cursor: pointer; }
   margin: 0 auto;
   padding: 28px 0 48px;
 }
+.project-menu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, .08);
+}
+.project-menu-title {
+  padding: 0 8px;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 950;
+}
+.project-menu button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 900;
+}
+.project-menu button:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.project-status {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
 .hero {
   display: flex;
   justify-content: space-between;
@@ -739,6 +777,9 @@ textarea {
 @media (max-width: 720px) {
   .studio-shell { width: min(100% - 24px, 680px); padding-top: 16px; }
   .hero, .panel-head, .action-panel, .summary-strip { flex-direction: column; align-items: stretch; }
+  .project-menu { align-items: stretch; }
+  .project-menu button { flex: 1 1 150px; }
+  .project-status { width: 100%; margin-left: 0; }
   .workflow { grid-template-columns: 1fr; }
   .photo-row { grid-template-columns: 28px 88px minmax(0, 1fr); }
   .photo-row img { width: 88px; }

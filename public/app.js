@@ -27,8 +27,22 @@ const applyPresetButton = document.getElementById("applyPresetButton");
 const timelineList = document.getElementById("timelineList");
 const timelineStatus = document.getElementById("timelineStatus");
 const transitionEditor = document.getElementById("transitionEditor");
+const titleInput = document.getElementById("titleInput");
+const templateInput = document.getElementById("templateInput");
+const bgmInput = document.getElementById("bgmInput");
+const bgmName = document.getElementById("bgmName");
+const openingCaptionInput = document.getElementById("openingCaptionInput");
+const endingCaptionInput = document.getElementById("endingCaptionInput");
+const newProjectButton = document.getElementById("newProjectButton");
+const openProjectButton = document.getElementById("openProjectButton");
+const saveProjectButton = document.getElementById("saveProjectButton");
+const saveAsProjectButton = document.getElementById("saveAsProjectButton");
+const projectInput = document.getElementById("projectInput");
+const projectStatus = document.getElementById("projectStatus");
 
 const supportedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const autosaveKey = "highlightStudio.autosaveProject";
+const projectFormatVersion = 1;
 const labelColors = ["#2563eb", "#16a34a", "#f97316", "#9333ea", "#0891b2", "#dc2626", "#4f46e5", "#0f766e"];
 
 const photoEffectOptions = [
@@ -136,6 +150,11 @@ let draggedTimelinePhotoId = null;
 let activeFilter = "all";
 let timelineZoom = 100;
 let activeTransitionPhotoId = null;
+let projectName = "\ud0dc\uad8c\ub3c4 \ud558\uc774\ub77c\uc774\ud2b8";
+let projectCreatedAt = new Date().toISOString();
+let projectModifiedAt = projectCreatedAt;
+let currentProjectFileName = "";
+let bgmReference = null;
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => ({
@@ -164,6 +183,39 @@ function formatDuration(seconds) {
   const minutes = Math.floor(total / 60);
   const rest = total % 60;
   return minutes ? `${minutes}\ubd84 ${rest}\ucd08` : `${rest}\ucd08`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleString("ko-KR", { hour12: false });
+}
+
+function safeFileName(value) {
+  return String(value || "highlight-studio-project")
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "-")
+    .slice(0, 80) || "highlight-studio-project";
+}
+
+function createPhotoPlaceholder(photo) {
+  const name = photo.file?.name || photo.fileName || "\uc0ac\uc9c4 \ucc38\uc870";
+  const resolution = photo.width && photo.height ? `${photo.width} x ${photo.height}` : "\uc6d0\ubcf8 \ud30c\uc77c \ucc38\uc870";
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+      <rect width="640" height="400" fill="#0f172a"/>
+      <rect x="40" y="40" width="560" height="320" rx="18" fill="#1e293b" stroke="#60a5fa" stroke-width="3" stroke-dasharray="10 8"/>
+      <text x="320" y="182" text-anchor="middle" fill="#e2e8f0" font-family="Arial, sans-serif" font-size="28" font-weight="700">${escapeHtml(name)}</text>
+      <text x="320" y="226" text-anchor="middle" fill="#93c5fd" font-family="Arial, sans-serif" font-size="20">${escapeHtml(resolution)}</text>
+      <text x="320" y="266" text-anchor="middle" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="18">\uc6d0\ubcf8 \uc0ac\uc9c4\uc740 .hsp\uc5d0 \ud3ec\ud568\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4</text>
+    </svg>
+  `;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function getPhotoUrl(photo) {
+  if (!photo.url) photo.url = createPhotoPlaceholder(photo);
+  return photo.url;
 }
 
 function getSecondsPerPhoto() {
@@ -220,6 +272,127 @@ function normalizeCaption(caption) {
   return createCaption(caption || {});
 }
 
+function serializePhoto(photo, index) {
+  return {
+    id: photo.id,
+    order: index,
+    fileName: photo.file?.name || photo.fileName || "",
+    fileType: photo.file?.type || photo.fileType || "",
+    fileSize: photo.file?.size || photo.fileSize || 0,
+    lastModified: photo.file?.lastModified || photo.lastModified || null,
+    referencePath: photo.referencePath || photo.file?.name || photo.fileName || "",
+    width: photo.width || 0,
+    height: photo.height || 0,
+    selected: selectedPhotoIds.has(photo.id),
+    students: Array.from(photo.studentIds || photo.students || []),
+    photoEffect: photo.photoEffect || "none",
+    duration: Number(photo.duration || photo.durationSeconds || getSecondsPerPhoto()),
+    durationSeconds: Number(photo.durationSeconds || photo.duration || getSecondsPerPhoto()),
+    transitionAfter: photo.transitionAfter ? createTransition(getTransitionType(photo.transitionAfter), getTransitionDuration(photo.transitionAfter)) : null,
+    caption: normalizeCaption(photo.caption)
+  };
+}
+
+function createProjectData() {
+  const now = new Date().toISOString();
+  projectModifiedAt = now;
+  projectName = titleInput.value.trim() || projectName || "Highlight Studio Project";
+  return {
+    format: "Highlight Studio Project",
+    extension: ".hsp",
+    version: projectFormatVersion,
+    project: {
+      name: projectName,
+      createdAt: projectCreatedAt,
+      modifiedAt: projectModifiedAt
+    },
+    video: {
+      title: titleInput.value,
+      template: templateInput.value,
+      defaultTransition: defaultTransitionInput.value,
+      secondsPerPhoto: getSecondsPerPhoto(),
+      openingCaption: openingCaptionInput.value,
+      endingCaption: endingCaptionInput.value,
+      bgm: bgmReference,
+      outputOptions: {
+        format: "mp4",
+        generationEnabled: false
+      }
+    },
+    students: students.map(student => ({ ...student })),
+    photos: photos.map(serializePhoto)
+  };
+}
+
+function restoreProjectData(data) {
+  if (!data || !Array.isArray(data.photos)) throw new Error("Invalid project file");
+  photos.forEach(photo => {
+    if (photo.url && photo.url.startsWith("blob:")) URL.revokeObjectURL(photo.url);
+  });
+
+  projectName = data.project?.name || data.video?.title || "Highlight Studio Project";
+  projectCreatedAt = data.project?.createdAt || new Date().toISOString();
+  projectModifiedAt = data.project?.modifiedAt || projectCreatedAt;
+  titleInput.value = data.video?.title || projectName;
+  templateInput.value = data.video?.template || "dynamic";
+  defaultTransitionInput.value = data.video?.defaultTransition || "fade";
+  secondsInput.value = String(data.video?.secondsPerPhoto || 2);
+  openingCaptionInput.value = data.video?.openingCaption || "";
+  endingCaptionInput.value = data.video?.endingCaption || "";
+  bgmReference = data.video?.bgm || null;
+  bgmName.textContent = bgmReference?.name ? `BGM: ${bgmReference.name}` : "\uc120\ud0dd\ub41c BGM \uc5c6\uc74c";
+
+  students = (data.students || []).map((student, index) => ({
+    id: student.id || `student-${Date.now()}-${index}`,
+    name: student.name || "\ud559\uc0dd",
+    color: student.color || labelColors[index % labelColors.length]
+  }));
+
+  photos = data.photos
+    .slice()
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
+    .map((photo, index) => {
+      const file = {
+        name: photo.fileName || photo.referencePath || `photo-${index + 1}`,
+        type: photo.fileType || "image/reference",
+        size: Number(photo.fileSize || 0),
+        lastModified: photo.lastModified || null
+      };
+      const studentIds = new Set(photo.students || []);
+      return {
+        id: photo.id || `restored-${Date.now()}-${index}`,
+        file,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        referencePath: photo.referencePath || file.name,
+        previewUrl: "",
+        url: "",
+        selected: Boolean(photo.selected),
+        students: Array.from(studentIds),
+        studentIds,
+        width: Number(photo.width || 0),
+        height: Number(photo.height || 0),
+        duration: Number(photo.duration || photo.durationSeconds || getSecondsPerPhoto()),
+        durationSeconds: Number(photo.durationSeconds || photo.duration || getSecondsPerPhoto()),
+        photoEffect: photo.photoEffect || "none",
+        caption: normalizeCaption(photo.caption),
+        transitionAfter: photo.transitionAfter ? createTransition(getTransitionType(photo.transitionAfter), getTransitionDuration(photo.transitionAfter)) : null
+      };
+    });
+  selectedPhotoIds = new Set(photos.filter(photo => photo.selected).map(photo => photo.id));
+  activePreviewId = photos[0]?.id || null;
+  activeFilter = "all";
+  normalizeLastTransition();
+  setProjectStatus(`\ubd88\ub7ec\uc634: ${formatDateTime(projectModifiedAt)}`);
+  renderStudents();
+  renderList();
+}
+
+function setProjectStatus(text) {
+  if (projectStatus) projectStatus.textContent = text;
+}
+
 function getEstimatedSeconds() {
   return photos.reduce((sum, photo) => sum + Number(photo.durationSeconds || getSecondsPerPhoto()), 0);
 }
@@ -262,6 +435,103 @@ function updateStats() {
 
 function setMessage(text) {
   message.textContent = text;
+}
+
+function downloadProject(data, fileName) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName.endsWith(".hsp") ? fileName : `${fileName}.hsp`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function saveProject(options = {}) {
+  const data = createProjectData();
+  if (options.askName || !currentProjectFileName) {
+    const nextName = window.prompt("\ud504\ub85c\uc81d\ud2b8 \ud30c\uc77c\uba85\uc744 \uc785\ub825\ud558\uc138\uc694.", currentProjectFileName || safeFileName(data.project.name));
+    if (!nextName) return;
+    currentProjectFileName = safeFileName(nextName.replace(/\.hsp$/i, ""));
+  }
+  downloadProject(data, currentProjectFileName);
+  localStorage.setItem(autosaveKey, JSON.stringify(data));
+  setProjectStatus(`\uc800\uc7a5\ub428: ${formatDateTime(data.project.modifiedAt)}`);
+  setMessage(".hsp \ud504\ub85c\uc81d\ud2b8 \ud30c\uc77c\uc744 \uc800\uc7a5\ud588\uc2b5\ub2c8\ub2e4. \uc0ac\uc9c4 \uc6d0\ubcf8\uc740 \ud3ec\ud568\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4.");
+}
+
+function autosaveProject() {
+  try {
+    const data = createProjectData();
+    localStorage.setItem(autosaveKey, JSON.stringify(data));
+    setProjectStatus(`\uc790\ub3d9 \uc800\uc7a5: ${formatDateTime(data.project.modifiedAt)}`);
+  } catch (error) {
+    setProjectStatus("\uc790\ub3d9 \uc800\uc7a5 \uc2e4\ud328");
+  }
+}
+
+function newProject() {
+  if (photos.length && !window.confirm("\ud604\uc7ac \uc791\uc5c5\uc744 \ucd08\uae30\ud654\ud558\uace0 \uc0c8 \ud504\ub85c\uc81d\ud2b8\ub97c \uc2dc\uc791\ud560\uae4c\uc694?")) return;
+  photos.forEach(photo => {
+    if (photo.url && photo.url.startsWith("blob:")) URL.revokeObjectURL(photo.url);
+  });
+  photos = [];
+  students = [];
+  selectedPhotoIds = new Set();
+  activePreviewId = null;
+  activeFilter = "all";
+  activeTransitionPhotoId = null;
+  projectName = "\ud0dc\uad8c\ub3c4 \ud558\uc774\ub77c\uc774\ud2b8";
+  projectCreatedAt = new Date().toISOString();
+  projectModifiedAt = projectCreatedAt;
+  currentProjectFileName = "";
+  bgmReference = null;
+  titleInput.value = projectName;
+  templateInput.value = "dynamic";
+  secondsInput.value = "2";
+  defaultTransitionInput.value = "fade";
+  openingCaptionInput.value = "";
+  endingCaptionInput.value = "";
+  bgmInput.value = "";
+  bgmName.textContent = "\uc120\ud0dd\ub41c BGM \uc5c6\uc74c";
+  localStorage.removeItem(autosaveKey);
+  setProjectStatus("\uc0c8 \ud504\ub85c\uc81d\ud2b8");
+  setMessage("\uc0c8 \ud504\ub85c\uc81d\ud2b8\ub97c \uc2dc\uc791\ud588\uc2b5\ub2c8\ub2e4.");
+  renderStudents();
+  renderList();
+}
+
+function openProjectFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      currentProjectFileName = safeFileName(file.name.replace(/\.hsp$/i, ""));
+      restoreProjectData(data);
+      localStorage.setItem(autosaveKey, JSON.stringify(createProjectData()));
+      setMessage(".hsp \ud504\ub85c\uc81d\ud2b8\ub97c \ubd88\ub7ec\uc654\uc2b5\ub2c8\ub2e4. \uc6d0\ubcf8 \uc0ac\uc9c4\uc740 \ucc38\uc870 \uc815\ubcf4\ub85c\ub9cc \ubcf5\uc6d0\ub429\ub2c8\ub2e4.");
+    } catch (error) {
+      setMessage("\ud504\ub85c\uc81d\ud2b8 \ud30c\uc77c\uc744 \ubd88\ub7ec\uc624\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4. .hsp \ud30c\uc77c\uc744 \ud655\uc778\ud558\uc138\uc694.");
+    }
+  };
+  reader.readAsText(file);
+}
+
+function restoreAutosaveIfWanted() {
+  const raw = localStorage.getItem(autosaveKey);
+  if (!raw) return;
+  try {
+    const data = JSON.parse(raw);
+    if (window.confirm("\uc774\uc804 \uc791\uc5c5\uc744 \ubcf5\uc6d0\ud558\uc2dc\uaca0\uc2b5\ub2c8\uae4c?")) {
+      restoreProjectData(data);
+      setMessage("\uc774\uc804 \uc790\ub3d9 \uc800\uc7a5 \uc791\uc5c5\uc744 \ubcf5\uc6d0\ud588\uc2b5\ub2c8\ub2e4.");
+    }
+  } catch (error) {
+    localStorage.removeItem(autosaveKey);
+  }
 }
 
 function getStudent(studentId) {
@@ -357,7 +627,7 @@ function renderList() {
           <input type="checkbox" data-action="select" data-id="${escapeHtml(photo.id)}" ${isSelected}>
         </label>
         <button class="thumb-button" type="button" data-action="preview" data-id="${escapeHtml(photo.id)}">
-          <img src="${photo.url}" alt="">
+          <img src="${getPhotoUrl(photo)}" alt="">
         </button>
         <div class="photo-meta">
           <strong>${realIndex + 1}. ${escapeHtml(photo.file.name)}</strong>
@@ -402,7 +672,7 @@ function renderPreview() {
   const captionPreview = caption.text.trim() ? escapeHtml(caption.text) : "\uc7a5\uba74\ubcc4 \uc790\ub9c9 \ubbf8\ub9ac\ubcf4\uae30";
   largePreview.innerHTML = `
     <div class="preview-stage">
-      <img src="${activePhoto.url}" alt="">
+      <img src="${getPhotoUrl(activePhoto)}" alt="">
       <div class="scene-caption is-${caption.position} is-${caption.style}">${captionPreview}</div>
     </div>
     <div class="preview-caption property-sheet">
@@ -475,7 +745,7 @@ function renderTimeline() {
     return `
       <div class="timeline-item" draggable="true" data-id="${escapeHtml(photo.id)}">
         <button class="timeline-photo${isActive}" type="button" data-action="preview" data-id="${escapeHtml(photo.id)}">
-          <img src="${photo.url}" alt="">
+          <img src="${getPhotoUrl(photo)}" alt="">
           <strong>${index + 1}</strong>
           <span>${effectLabel}</span>
           <em>${Number(photo.durationSeconds || getSecondsPerPhoto())}\ucd08</em>
@@ -928,6 +1198,21 @@ clearSelectionButton.addEventListener("click", () => {
 
 clearAllButton.addEventListener("click", clearAllPhotos);
 secondsInput.addEventListener("change", updateStats);
+titleInput.addEventListener("input", () => {
+  projectName = titleInput.value.trim() || projectName;
+});
+bgmInput.addEventListener("change", () => {
+  const file = bgmInput.files?.[0];
+  bgmReference = file ? {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    lastModified: file.lastModified,
+    referencePath: file.name
+  } : null;
+  bgmName.textContent = bgmReference ? `BGM: ${bgmReference.name}` : "\uc120\ud0dd\ub41c BGM \uc5c6\uc74c";
+  setMessage(bgmReference ? "BGM \ucc38\uc870 \uc815\ubcf4\ub97c \ucd94\uac00\ud588\uc2b5\ub2c8\ub2e4. \uc6d0\ubcf8 \uc74c\uc6d0\uc740 .hsp\uc5d0 \ud3ec\ud568\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4." : "BGM \uc120\ud0dd\uc744 \ud574\uc81c\ud588\uc2b5\ub2c8\ub2e4.");
+});
 addStudentButton.addEventListener("click", addStudent);
 studentNameInput.addEventListener("keydown", event => {
   if (event.key === "Enter") addStudent();
@@ -944,6 +1229,15 @@ document.querySelectorAll(".zoom-button").forEach(button => {
     document.querySelectorAll(".zoom-button").forEach(item => item.classList.toggle("is-active", item === button));
     renderTimeline();
   });
+});
+
+newProjectButton.addEventListener("click", newProject);
+openProjectButton.addEventListener("click", () => projectInput.click());
+saveProjectButton.addEventListener("click", () => saveProject());
+saveAsProjectButton.addEventListener("click", () => saveProject({ askName: true }));
+projectInput.addEventListener("change", () => {
+  openProjectFile(projectInput.files?.[0]);
+  projectInput.value = "";
 });
 
 prevPreviewButton.addEventListener("click", () => {
@@ -974,3 +1268,5 @@ fetch("/health")
 defaultTransitionInput.innerHTML = optionMarkup(transitionOptions, "fade");
 renderStudents();
 renderList();
+restoreAutosaveIfWanted();
+setInterval(autosaveProject, 5 * 60 * 1000);
