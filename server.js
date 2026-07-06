@@ -83,6 +83,7 @@ function publicJob(job) {
     status: job.status,
     progress: job.progress,
     currentPhoto: job.currentPhoto,
+    currentPhotoName: job.currentPhotoName,
     totalPhotos: job.totalPhotos,
     filename: job.filename,
     downloadUrl: job.downloadUrl,
@@ -238,7 +239,7 @@ function buildSceneFilter(photo, width, height, fps, duration) {
 }
 
 async function createRenderFromProject(project, files, job) {
-  updateJob(job, { status: "preparing", progress: 2 });
+  updateJob(job, { status: "rendering", progress: 2 });
   pushJobLog(job, "FFmpeg 설치 여부 확인 시작");
   const ffmpegReady = await checkFfmpeg();
   if (!ffmpegReady) throw new Error("FFmpeg를 실행할 수 없습니다. 서버 PC에 FFmpeg를 설치하거나 @ffmpeg-installer/ffmpeg 패키지를 확인해 주세요.");
@@ -266,18 +267,17 @@ async function createRenderFromProject(project, files, job) {
       const duration = Math.max(0.5, Math.min(30, Number(photo.durationSeconds || photo.duration || outputOptions.defaultPhotoDuration || PHOTO_SECONDS)));
       const segmentPath = path.join(workDir, `scene-${String(index + 1).padStart(3, "0")}.mp4`);
       updateJob(job, {
-        status: "processing_photos",
+        status: "rendering",
         currentPhoto: index + 1,
+        currentPhotoName: item.file.originalname || photo.fileName || `photo-${index + 1}`,
         totalPhotos: renderPhotos.length,
         progress: Math.round(8 + (index / renderPhotos.length) * 62)
       });
       pushJobLog(job, `사진 처리 중: ${index + 1}/${renderPhotos.length}`);
       if (String(photo.caption?.text || "").trim()) {
-        updateJob(job, { status: "applying_captions" });
         pushJobLog(job, `자막 적용: ${index + 1}/${renderPhotos.length}`);
       }
       if (photo.transitionAfter && photo.transitionAfter.type && photo.transitionAfter.type !== "none") {
-        updateJob(job, { status: "applying_transitions" });
         pushJobLog(job, `전환효과 적용: ${photo.transitionAfter.type}`);
       }
       await runFfmpeg([
@@ -297,7 +297,7 @@ async function createRenderFromProject(project, files, job) {
 
     const listPath = path.join(workDir, "segments.txt");
     fs.writeFileSync(listPath, segmentPaths.map(item => `file '${ffmpegListPath(item.path)}'`).join("\n"), "utf8");
-    updateJob(job, { status: "encoding", progress: 76, currentPhoto: renderPhotos.length, totalPhotos: renderPhotos.length });
+    updateJob(job, { status: "rendering", progress: 76, currentPhoto: renderPhotos.length, currentPhotoName: "MP4 인코딩", totalPhotos: renderPhotos.length });
     pushJobLog(job, "MP4 인코딩 시작");
 
     await runFfmpeg([
@@ -418,6 +418,7 @@ app.post("/api/render", upload.array("photos", MAX_PHOTOS), async (req, res) => 
       status: "queued",
       progress: 0,
       currentPhoto: 0,
+      currentPhotoName: "",
       totalPhotos: Array.isArray(project.photos) ? project.photos.filter(photo => photo.selected !== false).length : 0,
       filename: "",
       downloadUrl: "",

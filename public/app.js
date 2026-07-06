@@ -185,11 +185,7 @@ let renderPollTimer = null;
 
 const renderStatusLabels = {
   queued: "\ub300\uae30",
-  preparing: "\uc900\ube44 \uc911",
-  processing_photos: "\uc0ac\uc9c4 \ucc98\ub9ac \uc911",
-  applying_captions: "\uc790\ub9c9 \uc801\uc6a9 \uc911",
-  applying_transitions: "\uc804\ud658\ud6a8\uacfc \uc801\uc6a9 \uc911",
-  encoding: "MP4 \uc778\ucf54\ub529 \uc911",
+  rendering: "\ub80c\ub354\ub9c1 \uc911",
   completed: "\uc644\ub8cc",
   failed: "\uc2e4\ud328",
   canceled: "\ucde8\uc18c"
@@ -613,7 +609,8 @@ function updateRenderStatus(job = {}) {
   renderProgressBar.style.width = `${progress}%`;
   const current = Number(job.currentPhoto || 0);
   const total = Number(job.totalPhotos || 0);
-  renderPhotoText.textContent = total ? `\ud604\uc7ac \ucc98\ub9ac: ${current} / ${total}` : "\ud604\uc7ac \ucc98\ub9ac \uc911\uc778 \uc0ac\uc9c4 \uc5c6\uc74c";
+  const currentName = job.currentPhotoName ? ` - ${job.currentPhotoName}` : "";
+  renderPhotoText.textContent = total ? `\ud604\uc7ac \ucc98\ub9ac: ${current} / ${total}${currentName}` : "\ud604\uc7ac \ucc98\ub9ac \uc911\uc778 \uc0ac\uc9c4 \uc5c6\uc74c";
   renderLogLines(job.logs || []);
 }
 
@@ -634,7 +631,7 @@ async function pollRenderStatus(jobId) {
     cancelRenderButton.disabled = true;
     generateButton.disabled = photos.length === 0;
     if (job.status === "completed") {
-      setMessage(`MP4 \uc0dd\uc131 \uc644\ub8cc: ${job.filename} / ${formatDuration(Math.round(job.durationSeconds || 0))} / ${formatBytes(job.bytes || 0)} / \ub2e4\uc6b4\ub85c\ub4dc: ${job.downloadUrl}`);
+      setMessage(`MP4 \uc0dd\uc131 \uc644\ub8cc: ${job.filename} / ${formatDuration(Math.round(job.durationSeconds || 0))} / ${formatBytes(job.bytes || 0)}`);
     } else if (job.status === "canceled") {
       setMessage("MP4 \uc0dd\uc131\uc744 \ucde8\uc18c\ud588\uc2b5\ub2c8\ub2e4. \uc784\uc2dc \ud30c\uc77c\uc740 \uc815\ub9ac\ub429\ub2c8\ub2e4.");
     } else {
@@ -660,7 +657,7 @@ async function renderMp4() {
     formData.append("photos", photo.file, photo.id + (photo.file.name.match(/\.[^.]+$/)?.[0] || ".jpg"));
   }
 
-  updateRenderStatus({ status: "preparing", progress: 1, currentPhoto: 0, totalPhotos: renderablePhotos.length, logs: [{ time: new Date().toISOString(), message: "\ub80c\ub354\ub9c1 \uc694\uccad \uc900\ube44" }] });
+  updateRenderStatus({ status: "queued", progress: 1, currentPhoto: 0, currentPhotoName: "", totalPhotos: renderablePhotos.length, logs: [{ time: new Date().toISOString(), message: "\ub80c\ub354\ub9c1 \uc694\uccad \uc900\ube44" }] });
   generateButton.disabled = true;
   cancelRenderButton.disabled = true;
   setMessage("MP4 \uc0dd\uc131 \uc911\uc785\ub2c8\ub2e4. \uc0ac\uc9c4 \uc218\uc640 \ud574\uc0c1\ub3c4\uc5d0 \ub530\ub77c \uc2dc\uac04\uc774 \uac78\ub9b4 \uc218 \uc788\uc2b5\ub2c8\ub2e4.");
