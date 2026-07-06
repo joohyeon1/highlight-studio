@@ -25,6 +25,8 @@ const defaultTransitionInput = document.getElementById("defaultTransitionInput")
 const transitionPresetInput = document.getElementById("transitionPresetInput");
 const applyPresetButton = document.getElementById("applyPresetButton");
 const timelineList = document.getElementById("timelineList");
+const timelineStatus = document.getElementById("timelineStatus");
+const transitionEditor = document.getElementById("transitionEditor");
 
 const supportedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const labelColors = ["#2563eb", "#16a34a", "#f97316", "#9333ea", "#0891b2", "#dc2626", "#4f46e5", "#0f766e"];
@@ -69,7 +71,10 @@ let students = [];
 let selectedPhotoIds = new Set();
 let activePreviewId = null;
 let draggedPhotoId = null;
+let draggedTimelinePhotoId = null;
 let activeFilter = "all";
+let timelineZoom = 100;
+let activeTransitionPhotoId = null;
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => ({
@@ -104,6 +109,10 @@ function getSecondsPerPhoto() {
   return Number(secondsInput.value || 2);
 }
 
+function getEstimatedSeconds() {
+  return photos.reduce((sum, photo) => sum + Number(photo.durationSeconds || getSecondsPerPhoto()), 0);
+}
+
 function optionMarkup(options, selectedValue) {
   return options.map(option => {
     const selected = option.value === selectedValue ? "selected" : "";
@@ -134,9 +143,10 @@ function updateStats() {
   photoCount.textContent = `${photos.length}\uc7a5`;
   photoSize.textContent = formatBytes(totalSize);
   selectedCount.textContent = `${selectedPhotoIds.size}\uc7a5 \uc120\ud0dd`;
-  estimatedDuration.textContent = formatDuration(photos.length * getSecondsPerPhoto());
+  estimatedDuration.textContent = formatDuration(getEstimatedSeconds());
   generateButton.disabled = photos.length === 0;
   updateStudentPrep();
+  updateTimelineStatus();
 }
 
 function setMessage(text) {
@@ -278,11 +288,22 @@ function renderPreview() {
   const effectLabel = photoEffectOptions.find(option => option.value === activePhoto.photoEffect)?.label || "\uc5c6\uc74c";
   largePreview.innerHTML = `
     <img src="${activePhoto.url}" alt="">
-    <div class="preview-caption">
+    <div class="preview-caption property-sheet">
       <strong>${escapeHtml(activePhoto.file.name)}</strong>
       <span>${activeIndex + 1} / ${photos.length} - ${resolution} - ${formatBytes(activePhoto.file.size)}</span>
       <span>\uc0ac\uc9c4 \ud6a8\uacfc: ${effectLabel}</span>
       <div class="tag-list">${renderPhotoTags(activePhoto)}</div>
+      <label>\uc0ac\uc9c4 \ud6a8\uacfc
+        <select data-action="property-photo-effect" data-id="${escapeHtml(activePhoto.id)}">
+          ${optionMarkup(photoEffectOptions, activePhoto.photoEffect)}
+        </select>
+      </label>
+      <label>\uc0ac\uc9c4\ub2f9 \uc2dc\uac04
+        <select data-action="property-duration" data-id="${escapeHtml(activePhoto.id)}">
+          ${[1, 2, 3, 4, 5, 6].map(value => `<option value="${value}" ${Number(activePhoto.durationSeconds) === value ? "selected" : ""}>${value}\ucd08</option>`).join("")}
+        </select>
+      </label>
+      <button class="danger-button" type="button" data-action="property-remove" data-id="${escapeHtml(activePhoto.id)}">\uc0ac\uc9c4 \uc0ad\uc81c</button>
     </div>
   `;
   prevPreviewButton.disabled = activeIndex <= 0;
@@ -296,27 +317,61 @@ function renderTimeline() {
     return;
   }
 
+  timelineList.className = `timeline-list timeline-zoom-${timelineZoom}`;
   timelineList.innerHTML = photos.map((photo, index) => {
     const effectLabel = photoEffectOptions.find(option => option.value === photo.photoEffect)?.label || "\uc5c6\uc74c";
+    const transitionLabel = transitionOptions.find(option => option.value === (photo.transitionAfter || "none"))?.label || "\uc5c6\uc74c";
+    const isActive = photo.id === activePreviewId ? " is-active" : "";
     const transitionBlock = index < photos.length - 1 ? `
       <div class="timeline-transition">
         <span>${index + 1} \u2192 ${index + 2}</span>
-        <select data-action="transition-after" data-id="${escapeHtml(photo.id)}">
-          ${optionMarkup(transitionOptions, photo.transitionAfter || "none")}
-        </select>
+        <button type="button" data-action="open-transition" data-id="${escapeHtml(photo.id)}">${transitionLabel}</button>
       </div>
     ` : "";
     return `
-      <div class="timeline-item">
-        <button class="timeline-photo" type="button" data-action="preview" data-id="${escapeHtml(photo.id)}">
+      <div class="timeline-item" draggable="true" data-id="${escapeHtml(photo.id)}">
+        <button class="timeline-photo${isActive}" type="button" data-action="preview" data-id="${escapeHtml(photo.id)}">
           <img src="${photo.url}" alt="">
           <strong>${index + 1}</strong>
           <span>${effectLabel}</span>
+          <em>${Number(photo.durationSeconds || getSecondsPerPhoto())}\ucd08</em>
         </button>
         ${transitionBlock}
       </div>
     `;
   }).join("");
+  updateTimelineStatus();
+}
+
+function updateTimelineStatus() {
+  if (!timelineStatus) return;
+  const index = photos.findIndex(photo => photo.id === activePreviewId);
+  const current = index >= 0 ? `${index + 1} / ${photos.length}` : "\ud604\uc7ac \uc120\ud0dd \uc5c6\uc74c";
+  timelineStatus.textContent = `${photos.length}\uc7a5 / ${current}`;
+}
+
+function renderTransitionEditor(photoId) {
+  const photo = photos.find(item => item.id === photoId);
+  if (!photo) {
+    transitionEditor.classList.add("is-hidden");
+    transitionEditor.innerHTML = "";
+    activeTransitionPhotoId = null;
+    return;
+  }
+  activeTransitionPhotoId = photoId;
+  transitionEditor.classList.remove("is-hidden");
+  transitionEditor.innerHTML = `
+    <div class="transition-editor-head">
+      <strong>\uc804\ud658\ud6a8\uacfc \uc120\ud0dd</strong>
+      <button type="button" data-action="close-transition">\ub2eb\uae30</button>
+    </div>
+    <div class="transition-option-grid">
+      ${transitionOptions.map(option => {
+        const activeClass = option.value === (photo.transitionAfter || "none") ? " is-active" : "";
+        return `<button type="button" class="transition-choice${activeClass}" data-action="choose-transition" data-value="${option.value}">${option.label}</button>`;
+      }).join("")}
+    </div>
+  `;
 }
 
 function updateStudentPrep() {
@@ -339,7 +394,7 @@ function updateStudentPrep() {
 
   studentPrepSummary.innerHTML = `
     <strong>${escapeHtml(label)}</strong>
-    <span>${targetPhotos.length}\uc7a5 / ${formatDuration(targetPhotos.length * getSecondsPerPhoto())}</span>
+    <span>${targetPhotos.length}\uc7a5 / ${formatDuration(targetPhotos.reduce((sum, photo) => sum + Number(photo.durationSeconds || getSecondsPerPhoto()), 0))}</span>
   `;
   selectStudentPhotosButton.disabled = !targetPhotos.length;
 }
@@ -365,6 +420,7 @@ async function addFiles(fileList) {
       studentIds: new Set(),
       width: size.width,
       height: size.height,
+      durationSeconds: getSecondsPerPhoto(),
       photoEffect: "none",
       transitionAfter: defaultTransition
     };
@@ -479,12 +535,21 @@ function updatePhotoEffect(photoId, value) {
   renderList();
 }
 
+function updatePhotoDuration(photoId, value) {
+  const photo = photos.find(item => item.id === photoId);
+  if (!photo) return;
+  photo.durationSeconds = Number(value) || getSecondsPerPhoto();
+  activePreviewId = photoId;
+  renderList();
+}
+
 function updateTransitionAfter(photoId, value) {
   const photo = photos.find(item => item.id === photoId);
   if (!photo) return;
   photo.transitionAfter = value;
   setMessage("\uc0ac\uc9c4 \uc0ac\uc774 \uc804\ud658\ud6a8\uacfc\ub97c \uc218\uc815\ud588\uc2b5\ub2c8\ub2e4.");
   renderTimeline();
+  renderTransitionEditor(photoId);
 }
 
 function applyTransitionPreset() {
@@ -550,17 +615,74 @@ photoList.addEventListener("change", event => {
   }
 });
 
+largePreview.addEventListener("change", event => {
+  const target = event.target;
+  if (target.matches("select[data-action='property-photo-effect']")) {
+    updatePhotoEffect(target.dataset.id, target.value);
+  }
+  if (target.matches("select[data-action='property-duration']")) {
+    updatePhotoDuration(target.dataset.id, target.value);
+  }
+});
+
+largePreview.addEventListener("click", event => {
+  const target = event.target.closest("[data-action='property-remove']");
+  if (target) removePhoto(target.dataset.id);
+});
+
 timelineList.addEventListener("click", event => {
+  const transitionTarget = event.target.closest("[data-action='open-transition']");
+  if (transitionTarget) {
+    renderTransitionEditor(transitionTarget.dataset.id);
+    return;
+  }
   const target = event.target.closest("[data-action='preview']");
-  if (!target) return;
-  activePreviewId = target.dataset.id;
-  renderList();
+  if (target) {
+    activePreviewId = target.dataset.id;
+    renderList();
+  }
 });
 
 timelineList.addEventListener("change", event => {
   const target = event.target;
   if (target.matches("select[data-action='transition-after']")) {
     updateTransitionAfter(target.dataset.id, target.value);
+  }
+});
+
+timelineList.addEventListener("dragstart", event => {
+  const item = event.target.closest(".timeline-item");
+  if (!item) return;
+  draggedTimelinePhotoId = item.dataset.id;
+  item.classList.add("is-dragging");
+});
+
+timelineList.addEventListener("dragend", event => {
+  event.target.closest(".timeline-item")?.classList.remove("is-dragging");
+  draggedTimelinePhotoId = null;
+});
+
+timelineList.addEventListener("dragover", event => {
+  if (event.target.closest(".timeline-item")) event.preventDefault();
+});
+
+timelineList.addEventListener("drop", event => {
+  event.preventDefault();
+  const item = event.target.closest(".timeline-item");
+  if (item) movePhotoTo(draggedTimelinePhotoId, item.dataset.id);
+});
+
+transitionEditor.addEventListener("click", event => {
+  const closeTarget = event.target.closest("[data-action='close-transition']");
+  if (closeTarget) {
+    transitionEditor.classList.add("is-hidden");
+    transitionEditor.innerHTML = "";
+    activeTransitionPhotoId = null;
+    return;
+  }
+  const choice = event.target.closest("[data-action='choose-transition']");
+  if (choice && activeTransitionPhotoId) {
+    updateTransitionAfter(activeTransitionPhotoId, choice.dataset.value);
   }
 });
 
@@ -610,6 +732,13 @@ tagFilter.addEventListener("change", () => {
 });
 selectStudentPhotosButton.addEventListener("click", selectFilteredPhotos);
 applyPresetButton.addEventListener("click", applyTransitionPreset);
+document.querySelectorAll(".zoom-button").forEach(button => {
+  button.addEventListener("click", () => {
+    timelineZoom = Number(button.dataset.zoom) || 100;
+    document.querySelectorAll(".zoom-button").forEach(item => item.classList.toggle("is-active", item === button));
+    renderTimeline();
+  });
+});
 
 prevPreviewButton.addEventListener("click", () => {
   const index = findIndexById(activePreviewId);
