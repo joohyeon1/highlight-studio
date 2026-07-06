@@ -289,9 +289,21 @@
           <h2>&#49828;&#53664;&#47532;&#48372;&#46300;</h2>
           <p>&#50724;&#54532;&#45789;&#48512;&#53552; &#50644;&#46377;&#44620;&#51648; &#50689;&#49345; &#55120;&#47492;&#51012; &#52852;&#46300;&#47196; &#54869;&#51064;&#54616;&#44256; &#48736;&#47476;&#44172; &#51116;&#44396;&#49457;&#54633;&#45768;&#45796;.</p>
         </div>
-        <button id="aiRecommendButton" class="secondary-button" type="button">AI &#52628;&#52380; &#44396;&#49457;</button>
+        <div class="ai-edit-actions">
+          <label>&#51088;&#47561; &#50976;&#54805;
+            <select id="aiCaptionModeInput">
+              <option value="promotion">&#46020;&#51109; &#54861;&#48372;&#54805;</option>
+              <option value="emotional">&#44048;&#46041;&#54805;</option>
+              <option value="competition">&#45824;&#54924;&#54805;</option>
+              <option value="classRecord">&#49688;&#50629;&#44592;&#47197;&#54805;</option>
+            </select>
+          </label>
+          <button id="aiAutoEditButton" class="primary-button" type="button">AI &#51088;&#46041; &#54200;&#51665;</button>
+          <button id="aiRecommendButton" class="secondary-button" type="button">AI &#52628;&#52380; &#44396;&#49457;</button>
+        </div>
       </div>
       <div id="recommendationSummary" class="recommendation-summary">&#49324;&#51652;&#51012; &#52628;&#44032;&#54616;&#47732; &#51076;&#49884; &#52628;&#52380; &#50508;&#44256;&#47532;&#51608;&#51004;&#47196; &#44396;&#49457;&#51012; &#51228;&#50504;&#54633;&#45768;&#45796;.</div>
+      <div id="aiAnalysisList" class="ai-analysis-list"></div>
       <div id="storyboardList" class="storyboard-list" aria-live="polite"></div>
     </section>
 

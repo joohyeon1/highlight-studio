@@ -62,7 +62,10 @@ const outputFileNameInput = document.getElementById("outputFileNameInput");
 const outputDirectoryInput = document.getElementById("outputDirectoryInput");
 const outputEstimateList = document.getElementById("outputEstimateList");
 const aiRecommendButton = document.getElementById("aiRecommendButton");
+const aiAutoEditButton = document.getElementById("aiAutoEditButton");
+const aiCaptionModeInput = document.getElementById("aiCaptionModeInput");
 const recommendationSummary = document.getElementById("recommendationSummary");
+const aiAnalysisList = document.getElementById("aiAnalysisList");
 const storyboardList = document.getElementById("storyboardList");
 const outputPreviewVideo = document.getElementById("outputPreviewVideo");
 const outputPreviewEmpty = document.getElementById("outputPreviewEmpty");
@@ -854,7 +857,11 @@ function serializePhoto(photo, index) {
     favorite: Boolean(photo.favorite),
     locked: Boolean(photo.locked),
     rating: Number(photo.rating || 3),
-    recommended: Boolean(photo.recommended)
+    recommended: Boolean(photo.recommended),
+    aiScore: Number(photo.aiScore || 0),
+    aiExcluded: Boolean(photo.aiExcluded),
+    aiReasons: Array.isArray(photo.aiReasons) ? photo.aiReasons : [],
+    storyRole: photo.storyRole || ""
   };
 }
 
@@ -955,7 +962,11 @@ function restoreProjectData(data) {
         favorite: Boolean(photo.favorite),
         locked: Boolean(photo.locked),
         rating: Number(photo.rating || 3),
-        recommended: Boolean(photo.recommended)
+        recommended: Boolean(photo.recommended),
+        aiScore: Number(photo.aiScore || 0),
+        aiExcluded: Boolean(photo.aiExcluded),
+        aiReasons: Array.isArray(photo.aiReasons) ? photo.aiReasons : [],
+        storyRole: photo.storyRole || ""
       };
     });
   selectedPhotoIds = new Set(photos.filter(photo => photo.selected).map(photo => photo.id));
@@ -1333,11 +1344,14 @@ function renderStoryboard() {
             ${photo.favorite ? `<em>\u2605 \uc990\uaca8\ucc3e\uae30</em>` : ""}
             ${photo.locked ? `<em>\uD83D\uDD12 \uc7a0\uae08</em>` : ""}
             ${photo.recommended ? `<em>AI \ucd94\ucc9c</em>` : ""}
+            ${photo.aiExcluded ? `<em>AI \uc81c\uc678</em>` : ""}
+            ${photo.aiScore ? `<em>${Math.round(photo.aiScore)}\uc810</em>` : ""}
           </div>
           <div class="rating-control">${renderRating(photo)}</div>
           <div class="storyboard-actions">
             <button type="button" data-action="favorite" data-id="${escapeHtml(photo.id)}">${photo.favorite ? "\uc990\uaca8\ucc3e\uae30 \ud574\uc81c" : "\u2605 \uc990\uaca8\ucc3e\uae30"}</button>
             <button type="button" data-action="lock" data-id="${escapeHtml(photo.id)}">${photo.locked ? "\uc7a0\uae08 \ud574\uc81c" : "\uD83D\uDD12 \uc7a0\uae08"}</button>
+            <button type="button" data-action="toggle-recommended" data-id="${escapeHtml(photo.id)}">${photo.recommended ? "\ucd94\ucc9c \ud574\uc81c" : "\ucd94\ucc9c \uc801\uc6a9"}</button>
           </div>
         </div>
       </article>
@@ -1396,6 +1410,7 @@ function renderList() {
           <strong>${realIndex + 1}. ${escapeHtml(photo.file.name)}</strong>
           <span>${resolution}</span>
           <span>${formatBytes(photo.file.size)}</span>
+          ${photo.aiScore ? `<span>AI ${Math.round(photo.aiScore)}\uc810 / ${photo.aiExcluded ? "\uc81c\uc678" : photo.recommended ? "\ucd94\ucc9c" : "\ubcf4\ub958"}</span>` : ""}
           ${renderPhotoEffectControl(photo)}
           <div class="tag-list">${renderPhotoTags(photo)}</div>
           <div class="tag-controls">${renderTagButtons(photo)}</div>
@@ -1617,6 +1632,10 @@ async function addFiles(fileList) {
       locked: false,
       rating: 3,
       recommended: false,
+      aiScore: 0,
+      aiExcluded: false,
+      aiReasons: [],
+      storyRole: "",
       transitionAfter: createTransition(defaultTransition, 0.5)
     };
   }));
@@ -1681,12 +1700,200 @@ function updatePhotoRating(photoId, rating) {
   renderList();
 }
 
-function applyAiRecommendation() {
+function duplicateSignature(photo) {
+  return `${photo.file?.name || photo.fileName || ""}-${photo.file?.size || photo.fileSize || 0}-${photo.width || 0}x${photo.height || 0}`;
+}
+
+async function analyzePhotoPixels(photo) {
+  return new Promise(resolve => {
+    const image = new Image();
+    image.onload = () => {
+      const size = 48;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(image, 0, 0, size, size);
+      const data = ctx.getImageData(0, 0, size, size).data;
+      let brightness = 0;
+      let colorfulness = 0;
+      let sharpness = 0;
+      const gray = [];
+      for (let index = 0; index < data.length; index += 4) {
+        const r = data[index];
+        const g = data[index + 1];
+        const b = data[index + 2];
+        const value = (r + g + b) / 3;
+        gray.push(value);
+        brightness += value;
+        colorfulness += Math.abs(r - g) + Math.abs(g - b) + Math.abs(b - r);
+      }
+      for (let y = 1; y < size - 1; y += 1) {
+        for (let x = 1; x < size - 1; x += 1) {
+          const i = y * size + x;
+          sharpness += Math.abs(gray[i] - gray[i - 1]) + Math.abs(gray[i] - gray[i - size]);
+        }
+      }
+      const count = size * size;
+      resolve({
+        brightness: brightness / count,
+        colorfulness: colorfulness / count,
+        sharpness: sharpness / count
+      });
+    };
+    image.onerror = () => resolve({ brightness: 70, colorfulness: 20, sharpness: 25 });
+    image.src = getPhotoUrl(photo);
+  });
+}
+
+async function buildAiPhotoPayload(targetPhotos) {
+  const metrics = await Promise.all(targetPhotos.map(analyzePhotoPixels));
+  return targetPhotos.map((photo, index) => ({
+    id: photo.id,
+    fileName: photo.file?.name || photo.fileName || `photo-${index + 1}`,
+    width: photo.width || 0,
+    height: photo.height || 0,
+    size: photo.file?.size || photo.fileSize || 0,
+    selected: selectedPhotoIds.has(photo.id) || photo.selected,
+    favorite: photo.favorite,
+    locked: photo.locked,
+    rating: photo.rating || 3,
+    students: Array.from(photo.studentIds || []),
+    order: photos.findIndex(item => item.id === photo.id),
+    duplicateKey: duplicateSignature(photo),
+    ...metrics[index]
+  }));
+}
+
+function renderAiAnalysis(analysis = []) {
+  if (!aiAnalysisList) return;
+  if (!analysis.length) {
+    aiAnalysisList.innerHTML = "";
+    return;
+  }
+  aiAnalysisList.innerHTML = analysis.map(item => `
+    <article class="ai-analysis-item${item.excluded ? " is-excluded" : item.recommended ? " is-recommended" : ""}">
+      <strong>${escapeHtml(item.fileName)}</strong>
+      <span>${Math.round(item.score)}\uc810 / ${item.excluded ? "\uc81c\uc678" : item.recommended ? "\ucd94\ucc9c" : "\ubcf4\ub958"}</span>
+      <em>${escapeHtml([...(item.reasons || []), ...(item.excludeReasons || [])].join(", "))}</em>
+    </article>
+  `).join("");
+}
+
+function applyAiAnalysisToPhotos(analysis = []) {
+  const byId = new Map(analysis.map(item => [item.id, item]));
+  photos = photos.map(photo => {
+    const result = byId.get(photo.id);
+    if (!result) return photo;
+    return {
+      ...photo,
+      aiScore: result.score,
+      aiExcluded: result.excluded,
+      aiReasons: [...(result.reasons || []), ...(result.excludeReasons || [])],
+      recommended: photo.locked || result.recommended
+    };
+  });
+}
+
+function applyStoryboard(storyboard) {
+  if (!storyboard) return;
+  const selectedIds = new Set(storyboard.selectedPhotoIds || []);
+  const sceneByPhotoId = new Map((storyboard.scenes || []).filter(scene => scene.photoId).map(scene => [scene.photoId, scene]));
+  const lockedByIndex = new Map();
+  photos.forEach((photo, index) => {
+    if (photo.locked) lockedByIndex.set(index, photo);
+  });
+  const ordered = (storyboard.selectedPhotoIds || [])
+    .map(id => photos.find(photo => photo.id === id))
+    .filter(Boolean)
+    .filter(photo => !photo.locked)
+    .map(photo => {
+      const scene = sceneByPhotoId.get(photo.id);
+      return {
+        ...photo,
+        selected: true,
+        recommended: true,
+        aiExcluded: false,
+        storyRole: scene?.type || "",
+        durationSeconds: scene?.duration || photo.durationSeconds,
+        duration: scene?.duration || photo.duration,
+        caption: {
+          ...normalizeCaption(photo.caption),
+          text: normalizeCaption(photo.caption).text || scene?.caption || "",
+          position: "bottom",
+          style: "shadow",
+          timing: "full"
+        }
+      };
+    });
+  const excluded = photos
+    .filter(photo => !selectedIds.has(photo.id) && !photo.locked)
+    .map(photo => ({ ...photo, selected: false, recommended: false }));
+  const next = [...ordered, ...excluded];
+  photos = photos.map((photo, index) => lockedByIndex.get(index) || next.shift()).filter(Boolean);
+  const opening = storyboard.scenes?.find(scene => scene.type === "opening");
+  const ending = storyboard.scenes?.find(scene => scene.type === "ending");
+  if (opening?.caption) openingCaptionInput.value = opening.caption;
+  if (ending?.caption) endingCaptionInput.value = ending.caption;
+}
+
+async function runAiAutoEdit() {
+  if (!photos.length) {
+    setMessage("\uc790\ub3d9 \ud3b8\uc9d1\ud560 \uc0ac\uc9c4\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.");
+    return;
+  }
+  const targetPhotos = selectedPhotoIds.size ? photos.filter(photo => selectedPhotoIds.has(photo.id)) : photos;
+  aiAutoEditButton.disabled = true;
+  aiRecommendButton.disabled = true;
+  recommendationSummary.textContent = "\uc0ac\uc9c4 \ud488\uc9c8\uc744 \ubd84\uc11d\ud558\uace0 \uc2a4\ud1a0\ub9ac\ubcf4\ub4dc\ub97c \ub9cc\ub4dc\ub294 \uc911\uc785\ub2c8\ub2e4.";
+  try {
+    const payloadPhotos = await buildAiPhotoPayload(targetPhotos);
+    const analysisResponse = await fetch("/api/ai/analyze-photos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photos: payloadPhotos })
+    });
+    const analysisResult = await analysisResponse.json();
+    if (!analysisResponse.ok || !analysisResult.ok) throw new Error(analysisResult.error || "AI \ubd84\uc11d\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
+    applyAiAnalysisToPhotos(analysisResult.photos);
+    renderAiAnalysis(analysisResult.photos);
+
+    const storyboardResponse = await fetch("/api/ai/create-storyboard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        photos: payloadPhotos,
+        analysis: analysisResult.photos,
+        captionMode: aiCaptionModeInput?.value || "promotion"
+      })
+    });
+    const storyboardResult = await storyboardResponse.json();
+    if (!storyboardResponse.ok || !storyboardResult.ok) throw new Error(storyboardResult.error || "\uc2a4\ud1a0\ub9ac\ubcf4\ub4dc \uc0dd\uc131\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
+    applyStoryboard(storyboardResult.storyboard);
+    normalizeLastTransition();
+    activePreviewId = photos.find(photo => photo.recommended)?.id || photos[0]?.id || null;
+    const summary = analysisResult.summary;
+    recommendationSummary.textContent = `AI \uc790\ub3d9 \ud3b8\uc9d1 \uc644\ub8cc: ${summary.total}\uc7a5 \ubd84\uc11d, ${summary.recommended}\uc7a5 \ucd94\ucc9c, ${summary.excluded}\uc7a5 \uc81c\uc678, \ud3c9\uade0 ${summary.averageScore}\uc810.`;
+    setMessage("\ub85c\uceec \uaddc\uce59 \uae30\ubc18 AI \uc790\ub3d9 \ud3b8\uc9d1\uc744 \uc801\uc6a9\ud588\uc2b5\ub2c8\ub2e4. \uc678\ubd80 AI API\ub294 \uc0ac\uc6a9\ud558\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4.");
+    renderList();
+  } catch (error) {
+    recommendationSummary.textContent = error.message || "AI \uc790\ub3d9 \ud3b8\uc9d1\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.";
+    setMessage(recommendationSummary.textContent);
+  } finally {
+    aiAutoEditButton.disabled = false;
+    aiRecommendButton.disabled = false;
+  }
+}
+
+async function applyAiRecommendation() {
   if (!photos.length) {
     setMessage("\ucd94\ucc9c\ud560 \uc0ac\uc9c4\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.");
     return;
   }
+  await runAiAutoEdit();
+}
 
+function applyLegacyAiRecommendation() {
   const lockedByIndex = new Map();
   const duplicateKeys = new Set();
   const seenKeys = new Set();
@@ -2013,6 +2220,7 @@ storyboardList.addEventListener("click", event => {
   }
   if (action === "favorite") toggleStoryboardFlag(id, "favorite");
   if (action === "lock") toggleStoryboardFlag(id, "locked");
+  if (action === "toggle-recommended") toggleStoryboardFlag(id, "recommended");
   if (action === "rating") updatePhotoRating(id, target.dataset.rating);
 });
 
@@ -2038,6 +2246,7 @@ storyboardList.addEventListener("drop", event => {
   if (card) movePhotoTo(draggedStoryboardPhotoId, card.dataset.id);
 });
 
+aiAutoEditButton.addEventListener("click", runAiAutoEdit);
 aiRecommendButton.addEventListener("click", applyAiRecommendation);
 
 photoList.addEventListener("dragstart", event => {
