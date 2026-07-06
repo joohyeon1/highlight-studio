@@ -1,13 +1,17 @@
-﻿{
+{
   "name": "highlight-studio",
   "version": "0.1.0",
   "private": true,
   "description": "Independent AI video creation studio for photo-to-MP4 highlight videos.",
-  "main": "server.js",
+  "author": "SportsLink",
+  "main": "desktop/main.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "check": "node --check server.js"
+    "desktop": "electron .",
+    "dist": "electron-builder --win nsis",
+    "pack": "electron-builder --dir",
+    "check": "node --check server.js && node --check public/app.js && node --check desktop/main.js && node --check desktop/preload.js"
   },
   "engines": {
     "node": ">=20"
@@ -16,5 +20,44 @@
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "express": "^4.19.2",
     "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "kr.sportlink.highlightstudio",
+    "productName": "Highlight Studio",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "desktop/**/*",
+      "public/**/*",
+      "server.js",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Highlight Studio"
+    }
   }
 }

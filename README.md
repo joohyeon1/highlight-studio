@@ -156,6 +156,31 @@ Summary:
 - Runtime: Node.js 20 or later
 - Domain: `highlight.sportlink.kr`
 
+## Windows Desktop App
+
+STEP 11 adds an Electron desktop shell around the existing Express app.
+
+Desktop development:
+
+```text
+npm run desktop
+```
+
+Windows installer build:
+
+```text
+npm run dist
+```
+
+Generated files:
+
+```text
+dist/Highlight Studio Setup 0.1.0.exe
+dist/win-unpacked/Highlight Studio.exe
+```
+
+The desktop app starts the internal Express server on `localhost:4000`, waits for `/api/health`, then opens the main Highlight Studio screen. Packaged builds use local AppData folders for uploads, outputs, settings, and logs.
+
 ## Final Check Notes
 
 Verified in STEP 10:

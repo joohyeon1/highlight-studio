@@ -11,8 +11,8 @@ const PORT = Number(process.env.PORT || 4000);
 const APP_VERSION = "0.1.0";
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
-const UPLOAD_DIR = path.join(ROOT_DIR, "uploads");
-const OUTPUT_DIR = path.join(ROOT_DIR, "outputs");
+const UPLOAD_DIR = path.resolve(process.env.HIGHLIGHT_UPLOAD_DIR || path.join(ROOT_DIR, "uploads"));
+const OUTPUT_DIR = path.resolve(process.env.HIGHLIGHT_OUTPUT_DIR || path.join(ROOT_DIR, "outputs"));
 const MAX_PHOTOS = Number(process.env.HIGHLIGHT_MAX_PHOTOS || 100);
 const PHOTO_SECONDS = Number(process.env.HIGHLIGHT_PHOTO_SECONDS || 2);
 const SUPPORTED_RENDER_TRANSITIONS = new Set(["none", "fade", "crossfade"]);
@@ -771,8 +771,22 @@ app.use((error, _req, res, _next) => {
   res.status(400).json({ ok: false, error: error.message || "요청을 처리하지 못했습니다." });
 });
 
-app.listen(PORT, () => {
-  console.log(`Highlight Studio listening: http://localhost:${PORT}`);
-  console.log(`Uploads: ${UPLOAD_DIR}`);
-  console.log(`Outputs: ${OUTPUT_DIR}`);
-});
+function startServer(port = PORT) {
+  return app.listen(port, () => {
+    console.log(`Highlight Studio listening: http://localhost:${port}`);
+    console.log(`Uploads: ${UPLOAD_DIR}`);
+    console.log(`Outputs: ${OUTPUT_DIR}`);
+  });
+}
+
+if (require.main === module) {
+  startServer(PORT);
+}
+
+module.exports = {
+  app,
+  startServer,
+  PORT,
+  UPLOAD_DIR,
+  OUTPUT_DIR
+};

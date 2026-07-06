@@ -708,6 +708,23 @@ function renderOutputEstimate() {
   `;
 }
 
+function applyDesktopSettings(settings = {}) {
+  if (settings.defaultResolution && outputResolutionInput) {
+    outputResolutionInput.value = ["1080x1920", "1920x1080", "1080x1080", "custom"].includes(settings.defaultResolution)
+      ? settings.defaultResolution
+      : "1080x1920";
+  }
+  if (settings.defaultFps && outputFpsInput) outputFpsInput.value = String(settings.defaultFps);
+  if (settings.defaultTransition && defaultTransitionInput) defaultTransitionInput.value = settings.defaultTransition;
+  renderOutputEstimate();
+}
+
+function handleDesktopCommand(command) {
+  if (command === "new-project") newProject();
+  if (command === "open-project") projectInput.click();
+  if (command === "save-project") saveProject();
+}
+
 function createPhotoPlaceholder(photo) {
   const name = photo.file?.name || photo.fileName || "\uc0ac\uc9c4 \ucc38\uc870";
   const resolution = photo.width && photo.height ? `${photo.width} x ${photo.height}` : "\uc6d0\ubcf8 \ud30c\uc77c \ucc38\uc870";
@@ -2174,6 +2191,11 @@ outputsList.addEventListener("click", event => {
     deleteOutputFile(filename);
   }
 });
+
+if (window.highlightDesktop) {
+  window.highlightDesktop.onCommand(handleDesktopCommand);
+  window.highlightDesktop.onSettings(applyDesktopSettings);
+}
 
 fetch("/health")
   .then(res => res.json())
