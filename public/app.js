@@ -44,6 +44,25 @@ const photoEffectOptions = [
   { value: "dynamicZoom", label: "\uc5ed\ub3d9\ud615 \uc90c" }
 ];
 
+const captionPositionOptions = [
+  { value: "top", label: "\uc0c1\ub2e8" },
+  { value: "center", label: "\uc911\uc559" },
+  { value: "bottom", label: "\ud558\ub2e8" }
+];
+
+const captionStyleOptions = [
+  { value: "basic", label: "\uae30\ubcf8" },
+  { value: "bold", label: "\uad75\uac8c" },
+  { value: "shadow", label: "\uadf8\ub9bc\uc790" },
+  { value: "backdrop", label: "\ubc18\ud22c\uba85 \ubc30\uacbd" }
+];
+
+const captionTimingOptions = [
+  { value: "full", label: "\uc0ac\uc9c4 \uc804\uccb4 \uc2dc\uac04 \ub3d9\uc548 \ud45c\uc2dc" },
+  { value: "start", label: "\uc2dc\uc791 1\ucd08\ub9cc \ud45c\uc2dc" },
+  { value: "end", label: "\ub05d 1\ucd08\ub9cc \ud45c\uc2dc" }
+];
+
 const transitionOptions = [
   { value: "none", label: "\uc5c6\uc74c", icon: "--" },
   { value: "fade", label: "\ud398\uc774\ub4dc", icon: "F" },
@@ -185,6 +204,20 @@ function renderTransitionSummary(transition) {
     label: option.label,
     duration: formatTransitionDuration(getTransitionDuration(transition))
   };
+}
+
+function createCaption(overrides = {}) {
+  return {
+    text: "",
+    position: "bottom",
+    style: "shadow",
+    timing: "full",
+    ...overrides
+  };
+}
+
+function normalizeCaption(caption) {
+  return createCaption(caption || {});
 }
 
 function getEstimatedSeconds() {
@@ -364,8 +397,14 @@ function renderPreview() {
 
   const resolution = activePhoto.width && activePhoto.height ? `${activePhoto.width} x ${activePhoto.height}` : "\ud574\uc0c1\ub3c4 \ud655\uc778 \uc911";
   const effectLabel = photoEffectOptions.find(option => option.value === activePhoto.photoEffect)?.label || "\uc5c6\uc74c";
+  const caption = normalizeCaption(activePhoto.caption);
+  activePhoto.caption = caption;
+  const captionPreview = caption.text.trim() ? escapeHtml(caption.text) : "\uc7a5\uba74\ubcc4 \uc790\ub9c9 \ubbf8\ub9ac\ubcf4\uae30";
   largePreview.innerHTML = `
-    <img src="${activePhoto.url}" alt="">
+    <div class="preview-stage">
+      <img src="${activePhoto.url}" alt="">
+      <div class="scene-caption is-${caption.position} is-${caption.style}">${captionPreview}</div>
+    </div>
     <div class="preview-caption property-sheet">
       <strong>${escapeHtml(activePhoto.file.name)}</strong>
       <span>${activeIndex + 1} / ${photos.length} - ${resolution} - ${formatBytes(activePhoto.file.size)}</span>
@@ -381,6 +420,29 @@ function renderPreview() {
           ${[1, 2, 3, 4, 5, 6].map(value => `<option value="${value}" ${Number(activePhoto.durationSeconds) === value ? "selected" : ""}>${value}\ucd08</option>`).join("")}
         </select>
       </label>
+      <div class="caption-editor">
+        <strong>\uc7a5\uba74\ubcc4 \uc790\ub9c9</strong>
+        <label>\uc790\ub9c9 \ub0b4\uc6a9
+          <textarea data-action="property-caption-text" data-id="${escapeHtml(activePhoto.id)}" rows="3" maxlength="120" placeholder="\uc774 \uc0ac\uc9c4\uc5d0 \ub4e4\uc5b4\uac08 \uc790\ub9c9\uc744 \uc785\ub825\ud558\uc138\uc694.">${escapeHtml(caption.text)}</textarea>
+        </label>
+        <div class="caption-property-grid">
+          <label>\uc790\ub9c9 \uc704\uce58
+            <select data-action="property-caption-position" data-id="${escapeHtml(activePhoto.id)}">
+              ${optionMarkup(captionPositionOptions, caption.position)}
+            </select>
+          </label>
+          <label>\uc790\ub9c9 \uc2a4\ud0c0\uc77c
+            <select data-action="property-caption-style" data-id="${escapeHtml(activePhoto.id)}">
+              ${optionMarkup(captionStyleOptions, caption.style)}
+            </select>
+          </label>
+          <label>\ud45c\uc2dc \uc2dc\uac04
+            <select data-action="property-caption-timing" data-id="${escapeHtml(activePhoto.id)}">
+              ${optionMarkup(captionTimingOptions, caption.timing)}
+            </select>
+          </label>
+        </div>
+      </div>
       <button class="danger-button" type="button" data-action="property-remove" data-id="${escapeHtml(activePhoto.id)}">\uc0ac\uc9c4 \uc0ad\uc81c</button>
     </div>
   `;
@@ -516,6 +578,7 @@ async function addFiles(fileList) {
       durationSeconds: getSecondsPerPhoto(),
       duration: getSecondsPerPhoto(),
       photoEffect: "none",
+      caption: createCaption(),
       transitionAfter: createTransition(defaultTransition, 0.5)
     };
   }));
@@ -639,6 +702,22 @@ function updatePhotoDuration(photoId, value) {
   renderList();
 }
 
+function updatePhotoCaption(photoId, key, value, options = {}) {
+  const photo = photos.find(item => item.id === photoId);
+  if (!photo) return;
+  photo.caption = {
+    ...normalizeCaption(photo.caption),
+    [key]: value
+  };
+  activePreviewId = photoId;
+  if (options.render === false) {
+    const captionTarget = largePreview.querySelector(".scene-caption");
+    if (captionTarget) captionTarget.textContent = photo.caption.text.trim() || "\uc7a5\uba74\ubcc4 \uc790\ub9c9 \ubbf8\ub9ac\ubcf4\uae30";
+    return;
+  }
+  renderPreview();
+}
+
 function updateTransitionAfter(photoId, value, duration) {
   const photo = photos.find(item => item.id === photoId);
   if (!photo) return;
@@ -733,6 +812,22 @@ largePreview.addEventListener("change", event => {
   }
   if (target.matches("select[data-action='property-duration']")) {
     updatePhotoDuration(target.dataset.id, target.value);
+  }
+  if (target.matches("select[data-action='property-caption-position']")) {
+    updatePhotoCaption(target.dataset.id, "position", target.value);
+  }
+  if (target.matches("select[data-action='property-caption-style']")) {
+    updatePhotoCaption(target.dataset.id, "style", target.value);
+  }
+  if (target.matches("select[data-action='property-caption-timing']")) {
+    updatePhotoCaption(target.dataset.id, "timing", target.value);
+  }
+});
+
+largePreview.addEventListener("input", event => {
+  const target = event.target;
+  if (target.matches("textarea[data-action='property-caption-text']")) {
+    updatePhotoCaption(target.dataset.id, "text", target.value, { render: false });
   }
 });
 
@@ -868,7 +963,7 @@ nextPreviewButton.addEventListener("click", () => {
 });
 
 generateButton.addEventListener("click", () => {
-  setMessage("\uc601\uc0c1 \uc0dd\uc131 \uc900\ube44 \uc644\ub8cc: \ud0c0\uc784\ub77c\uc778 \ud6a8\uacfc \ub370\uc774\ud130\ub9cc \uc900\ube44\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \uc2e4\uc81c MP4 \uc0dd\uc131\uc740 \ub2e4\uc74c \ub2e8\uacc4\uc785\ub2c8\ub2e4.");
+  setMessage("\uc601\uc0c1 \uc0dd\uc131 \uc900\ube44 \uc644\ub8cc: \uc790\ub9c9\uacfc \ud0c0\uc784\ub77c\uc778 \ub370\uc774\ud130\ub9cc \uc900\ube44\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \uc2e4\uc81c MP4 \uc0dd\uc131\uc740 \ub2e4\uc74c \ub2e8\uacc4\uc785\ub2c8\ub2e4.");
 });
 
 fetch("/health")

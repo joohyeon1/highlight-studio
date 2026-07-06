@@ -326,6 +326,10 @@ textarea {
   border-radius: 8px;
   background: #f8fafc;
 }
+.preview-stage {
+  position: relative;
+  background: #0f172a;
+}
 .large-preview img {
   width: 100%;
   aspect-ratio: 16/10;
@@ -333,6 +337,27 @@ textarea {
   display: block;
   background: #0f172a;
 }
+.scene-caption {
+  position: absolute;
+  left: 50%;
+  max-width: calc(100% - 32px);
+  padding: 7px 12px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: center;
+  transform: translateX(-50%);
+  overflow-wrap: anywhere;
+}
+.scene-caption.is-top { top: 14px; }
+.scene-caption.is-center { top: 50%; transform: translate(-50%, -50%); }
+.scene-caption.is-bottom { bottom: 14px; }
+.scene-caption.is-basic { background: rgba(15, 23, 42, 0.18); }
+.scene-caption.is-bold { background: rgba(15, 23, 42, 0.18); font-weight: 950; }
+.scene-caption.is-shadow { text-shadow: 0 2px 8px rgba(0, 0, 0, 0.72); }
+.scene-caption.is-backdrop { background: rgba(15, 23, 42, 0.68); }
 .preview-caption {
   display: grid;
   gap: 4px;
@@ -341,7 +366,25 @@ textarea {
 .preview-caption span { color: var(--muted); font-size: 13px; font-weight: 700; }
 .property-sheet { gap: 10px; }
 .property-sheet label { gap: 6px; font-size: 13px; }
-.property-sheet select { min-height: 42px; }
+.property-sheet select,
+.property-sheet textarea { min-height: 42px; }
+.caption-editor {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+.caption-editor > strong {
+  color: #1e3a8a;
+  font-size: 14px;
+}
+.caption-property-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
 .preview-controls {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -672,6 +715,9 @@ textarea {
   border-radius: 8px;
   background: #f8fafc;
 }
+.caption-grid textarea {
+  margin-top: 8px;
+}
 .bgm-name {
   margin-top: 16px;
   min-height: 48px;
@@ -686,7 +732,7 @@ textarea {
 }
 
 @media (max-width: 980px) {
-  .studio-grid, .photo-workspace, .option-grid, .caption-grid, .stats-grid, .tagging-grid, .preset-row { grid-template-columns: 1fr; }
+  .studio-grid, .photo-workspace, .option-grid, .caption-grid, .caption-property-grid, .stats-grid, .tagging-grid, .preset-row { grid-template-columns: 1fr; }
   .preview-panel { position: static; }
 }
 
