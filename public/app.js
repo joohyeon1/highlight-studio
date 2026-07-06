@@ -13,7 +13,13 @@ const largePreview = document.getElementById("largePreview");
 const prevPreviewButton = document.getElementById("prevPreviewButton");
 const nextPreviewButton = document.getElementById("nextPreviewButton");
 const generateButton = document.getElementById("generateButton");
+const cancelRenderButton = document.getElementById("cancelRenderButton");
 const message = document.getElementById("message");
+const renderStatusText = document.getElementById("renderStatusText");
+const renderProgressText = document.getElementById("renderProgressText");
+const renderProgressBar = document.getElementById("renderProgressBar");
+const renderPhotoText = document.getElementById("renderPhotoText");
+const renderLog = document.getElementById("renderLog");
 const serverStatus = document.getElementById("serverStatus");
 const studentNameInput = document.getElementById("studentNameInput");
 const addStudentButton = document.getElementById("addStudentButton");
@@ -174,6 +180,20 @@ let currentProjectFileName = "";
 let bgmReference = null;
 let outputFileNameTouched = false;
 let pendingAutosaveData = null;
+let activeRenderJobId = null;
+let renderPollTimer = null;
+
+const renderStatusLabels = {
+  queued: "\ub300\uae30",
+  preparing: "\uc900\ube44 \uc911",
+  processing_photos: "\uc0ac\uc9c4 \ucc98\ub9ac \uc911",
+  applying_captions: "\uc790\ub9c9 \uc801\uc6a9 \uc911",
+  applying_transitions: "\uc804\ud658\ud6a8\uacfc \uc801\uc6a9 \uc911",
+  encoding: "MP4 \uc778\ucf54\ub529 \uc911",
+  completed: "\uc644\ub8cc",
+  failed: "\uc2e4\ud328",
+  canceled: "\ucde8\uc18c"
+};
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => ({
@@ -578,6 +598,51 @@ function setMessage(text) {
   message.textContent = text;
 }
 
+function renderLogLines(logs = []) {
+  renderLog.textContent = logs.map(item => {
+    const time = item.time ? new Date(item.time).toLocaleTimeString("ko-KR", { hour12: false }) : "";
+    return `[${time}] ${item.message}`;
+  }).join("\n");
+  renderLog.scrollTop = renderLog.scrollHeight;
+}
+
+function updateRenderStatus(job = {}) {
+  const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
+  renderStatusText.textContent = renderStatusLabels[job.status] || "\ub300\uae30";
+  renderProgressText.textContent = `${progress}%`;
+  renderProgressBar.style.width = `${progress}%`;
+  const current = Number(job.currentPhoto || 0);
+  const total = Number(job.totalPhotos || 0);
+  renderPhotoText.textContent = total ? `\ud604\uc7ac \ucc98\ub9ac: ${current} / ${total}` : "\ud604\uc7ac \ucc98\ub9ac \uc911\uc778 \uc0ac\uc9c4 \uc5c6\uc74c";
+  renderLogLines(job.logs || []);
+}
+
+function stopRenderPolling() {
+  if (renderPollTimer) clearInterval(renderPollTimer);
+  renderPollTimer = null;
+}
+
+async function pollRenderStatus(jobId) {
+  const response = await fetch(`/api/render/status/${encodeURIComponent(jobId)}`);
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw new Error(result.error || "\ub80c\ub354\ub9c1 \uc0c1\ud0dc\ub97c \ud655\uc778\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.");
+  const job = result.job;
+  updateRenderStatus(job);
+  if (["completed", "failed", "canceled"].includes(job.status)) {
+    stopRenderPolling();
+    activeRenderJobId = null;
+    cancelRenderButton.disabled = true;
+    generateButton.disabled = photos.length === 0;
+    if (job.status === "completed") {
+      setMessage(`MP4 \uc0dd\uc131 \uc644\ub8cc: ${job.filename} / ${formatDuration(Math.round(job.durationSeconds || 0))} / ${formatBytes(job.bytes || 0)} / \ub2e4\uc6b4\ub85c\ub4dc: ${job.downloadUrl}`);
+    } else if (job.status === "canceled") {
+      setMessage("MP4 \uc0dd\uc131\uc744 \ucde8\uc18c\ud588\uc2b5\ub2c8\ub2e4. \uc784\uc2dc \ud30c\uc77c\uc740 \uc815\ub9ac\ub429\ub2c8\ub2e4.");
+    } else {
+      setMessage(job.error || "MP4 \uc0dd\uc131\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
+    }
+  }
+}
+
 async function renderMp4() {
   const renderablePhotos = getRenderablePhotos();
   if (!renderablePhotos.length) {
@@ -595,7 +660,9 @@ async function renderMp4() {
     formData.append("photos", photo.file, photo.id + (photo.file.name.match(/\.[^.]+$/)?.[0] || ".jpg"));
   }
 
+  updateRenderStatus({ status: "preparing", progress: 1, currentPhoto: 0, totalPhotos: renderablePhotos.length, logs: [{ time: new Date().toISOString(), message: "\ub80c\ub354\ub9c1 \uc694\uccad \uc900\ube44" }] });
   generateButton.disabled = true;
+  cancelRenderButton.disabled = true;
   setMessage("MP4 \uc0dd\uc131 \uc911\uc785\ub2c8\ub2e4. \uc0ac\uc9c4 \uc218\uc640 \ud574\uc0c1\ub3c4\uc5d0 \ub530\ub77c \uc2dc\uac04\uc774 \uac78\ub9b4 \uc218 \uc788\uc2b5\ub2c8\ub2e4.");
 
   try {
@@ -605,11 +672,35 @@ async function renderMp4() {
     });
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.error || "MP4 \uc0dd\uc131\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
-    setMessage(`MP4 \uc0dd\uc131 \uc644\ub8cc: ${result.filename} / ${formatDuration(Math.round(result.durationSeconds || 0))} / ${formatBytes(result.bytes || 0)} / \ub2e4\uc6b4\ub85c\ub4dc: ${result.downloadUrl}`);
+    activeRenderJobId = result.jobId;
+    cancelRenderButton.disabled = false;
+    await pollRenderStatus(activeRenderJobId);
+    renderPollTimer = setInterval(() => {
+      if (!activeRenderJobId) return;
+      pollRenderStatus(activeRenderJobId).catch(error => {
+        stopRenderPolling();
+        activeRenderJobId = null;
+        cancelRenderButton.disabled = true;
+        generateButton.disabled = photos.length === 0;
+        setMessage(error.message);
+      });
+    }, 1000);
   } catch (error) {
     setMessage(error.message || "MP4 \uc0dd\uc131\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4. FFmpeg \uc124\uce58 \uc0c1\ud0dc\ub97c \ud655\uc778\ud558\uc138\uc694.");
-  } finally {
     generateButton.disabled = photos.length === 0;
+    cancelRenderButton.disabled = true;
+  }
+}
+
+async function cancelRender() {
+  if (!activeRenderJobId) return;
+  cancelRenderButton.disabled = true;
+  setMessage("\ub80c\ub354\ub9c1 \ucde8\uc18c \uc694\uccad \uc911\uc785\ub2c8\ub2e4.");
+  try {
+    await fetch(`/api/render/cancel/${encodeURIComponent(activeRenderJobId)}`, { method: "POST" });
+    await pollRenderStatus(activeRenderJobId);
+  } catch (error) {
+    setMessage(error.message || "\ub80c\ub354\ub9c1 \ucde8\uc18c\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
   }
 }
 
@@ -1659,6 +1750,7 @@ nextPreviewButton.addEventListener("click", () => {
 generateButton.addEventListener("click", () => {
   renderMp4();
 });
+cancelRenderButton.addEventListener("click", cancelRender);
 
 fetch("/health")
   .then(res => res.json())

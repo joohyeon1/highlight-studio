@@ -284,8 +284,22 @@
       <div>
         <h2>MP4 &#49373;&#49457; &#51456;&#48708;</h2>
         <p id="message">4-4&#45800;&#44228;&#45716; &#51109;&#47732;&#48324; &#51088;&#47561; UI&#50752; &#45936;&#51060;&#53552; &#44396;&#51312;&#47564; &#51456;&#48708;&#54633;&#45768;&#45796;.</p>
+        <div class="render-status-box">
+          <div class="render-status-head">
+            <strong id="renderStatusText">&#45824;&#44592;</strong>
+            <span id="renderProgressText">0%</span>
+          </div>
+          <div class="render-progress">
+            <div id="renderProgressBar"></div>
+          </div>
+          <div id="renderPhotoText" class="render-photo-text">&#54788;&#51116; &#52376;&#47532; &#51473;&#51064; &#49324;&#51652; &#50630;&#51020;</div>
+          <pre id="renderLog" class="render-log"></pre>
+        </div>
       </div>
-      <button id="generateButton" class="primary-button" type="button" disabled>MP4 &#49373;&#49457;</button>
+      <div class="render-actions">
+        <button id="generateButton" class="primary-button" type="button" disabled>MP4 &#49373;&#49457;</button>
+        <button id="cancelRenderButton" class="secondary-button" type="button" disabled>&#52712;&#49548;</button>
+      </div>
     </section>
   </main>
   <script src="/app.js"></script>
