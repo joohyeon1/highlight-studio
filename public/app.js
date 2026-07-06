@@ -39,6 +39,9 @@ const saveProjectButton = document.getElementById("saveProjectButton");
 const saveAsProjectButton = document.getElementById("saveAsProjectButton");
 const projectInput = document.getElementById("projectInput");
 const projectStatus = document.getElementById("projectStatus");
+const restoreBanner = document.getElementById("restoreBanner");
+const restoreAutosaveButton = document.getElementById("restoreAutosaveButton");
+const dismissAutosaveButton = document.getElementById("dismissAutosaveButton");
 const outputResolutionInput = document.getElementById("outputResolutionInput");
 const customResolutionFields = document.getElementById("customResolutionFields");
 const customWidthInput = document.getElementById("customWidthInput");
@@ -170,6 +173,7 @@ let projectModifiedAt = projectCreatedAt;
 let currentProjectFileName = "";
 let bgmReference = null;
 let outputFileNameTouched = false;
+let pendingAutosaveData = null;
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, char => ({
@@ -707,10 +711,9 @@ function restoreAutosaveIfWanted() {
   if (!raw) return;
   try {
     const data = JSON.parse(raw);
-    if (window.confirm("\uc774\uc804 \uc791\uc5c5\uc744 \ubcf5\uc6d0\ud558\uc2dc\uaca0\uc2b5\ub2c8\uae4c?")) {
-      restoreProjectData(data);
-      setMessage("\uc774\uc804 \uc790\ub3d9 \uc800\uc7a5 \uc791\uc5c5\uc744 \ubcf5\uc6d0\ud588\uc2b5\ub2c8\ub2e4.");
-    }
+    pendingAutosaveData = data;
+    restoreBanner.classList.remove("is-hidden");
+    setProjectStatus("\uc774\uc804 \uc791\uc5c5 \ubcf5\uc6d0 \uac00\ub2a5");
   } catch (error) {
     localStorage.removeItem(autosaveKey);
   }
@@ -1621,6 +1624,20 @@ saveAsProjectButton.addEventListener("click", () => saveProject({ askName: true 
 projectInput.addEventListener("change", () => {
   openProjectFile(projectInput.files?.[0]);
   projectInput.value = "";
+});
+restoreAutosaveButton.addEventListener("click", () => {
+  if (!pendingAutosaveData) return;
+  restoreProjectData(pendingAutosaveData);
+  restoreBanner.classList.add("is-hidden");
+  pendingAutosaveData = null;
+  setMessage("\uc774\uc804 \uc790\ub3d9 \uc800\uc7a5 \uc791\uc5c5\uc744 \ubcf5\uc6d0\ud588\uc2b5\ub2c8\ub2e4.");
+});
+dismissAutosaveButton.addEventListener("click", () => {
+  pendingAutosaveData = null;
+  localStorage.removeItem(autosaveKey);
+  restoreBanner.classList.add("is-hidden");
+  setProjectStatus("\uc0c8\ub85c \uc2dc\uc791");
+  setMessage("\uc774\uc804 \uc790\ub3d9 \uc800\uc7a5 \uc791\uc5c5\uc744 \uc0ac\uc6a9\ud558\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4.");
 });
 
 prevPreviewButton.addEventListener("click", () => {
