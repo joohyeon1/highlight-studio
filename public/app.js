@@ -55,6 +55,9 @@ const customHeightInput = document.getElementById("customHeightInput");
 const outputFpsInput = document.getElementById("outputFpsInput");
 const outputQualityInput = document.getElementById("outputQualityInput");
 const outputFormatInput = document.getElementById("outputFormatInput");
+const renderEncoderInput = document.getElementById("renderEncoderInput");
+const encoderDetectionText = document.getElementById("encoderDetectionText");
+const activeEncoderText = document.getElementById("activeEncoderText");
 const outputFileNameInput = document.getElementById("outputFileNameInput");
 const outputDirectoryInput = document.getElementById("outputDirectoryInput");
 const outputEstimateList = document.getElementById("outputEstimateList");
@@ -90,6 +93,13 @@ const autosaveKey = "highlightStudio.autosaveProject";
 const authStorageKey = "highlightStudio.localAuth";
 const projectFormatVersion = 1;
 const labelColors = ["#2563eb", "#16a34a", "#f97316", "#9333ea", "#0891b2", "#dc2626", "#4f46e5", "#0f766e"];
+const encoderLabels = {
+  auto: "\uc790\ub3d9 \uc120\ud0dd",
+  cpu: "CPU",
+  nvenc: "NVIDIA NVENC",
+  qsv: "Intel Quick Sync",
+  amf: "AMD AMF"
+};
 
 const photoEffectOptions = [
   { value: "none", label: "\uc5c6\uc74c" },
@@ -674,12 +684,35 @@ function getOutputOptions() {
     fps: Number(outputFpsInput.value) || 30,
     quality: outputQualityInput.value,
     format: outputFormatInput.value,
+    encoder: renderEncoderInput?.value || "auto",
     defaultPhotoDuration: getSecondsPerPhoto(),
     fileName: outputFileNameInput.value.trim() || createDefaultOutputFileName(),
     directory: outputDirectoryInput.value.trim() || "outputs/",
     estimatedSize: estimateOutputSize(),
     generationEnabled: false
   };
+}
+
+function describeEncoder(value, codec = "") {
+  const label = encoderLabels[value] || value || "CPU";
+  return codec ? `${label} (${codec})` : label;
+}
+
+async function loadRenderEncoders() {
+  if (!encoderDetectionText || !activeEncoderText) return;
+  try {
+    const response = await fetch("/api/render/encoders");
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "\uc778\ucf54\ub354\ub97c \ud655\uc778\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.");
+    const gpuNames = (result.encoders || [])
+      .filter(encoder => encoder.value !== "cpu" && encoder.available)
+      .map(encoder => encoder.label);
+    encoderDetectionText.textContent = gpuNames.length ? gpuNames.join(", ") : "GPU \ubbf8\uc9c0\uc6d0 / CPU \uc0ac\uc6a9";
+    activeEncoderText.textContent = describeEncoder(result.selected, result.selectedCodec);
+  } catch (error) {
+    encoderDetectionText.textContent = "\uac10\uc9c0 \uc2e4\ud328 / CPU \uc0ac\uc6a9";
+    activeEncoderText.textContent = "CPU (libx264)";
+  }
 }
 
 function getRenderablePhotos() {
@@ -716,6 +749,7 @@ function applyDesktopSettings(settings = {}) {
   }
   if (settings.defaultFps && outputFpsInput) outputFpsInput.value = String(settings.defaultFps);
   if (settings.defaultTransition && defaultTransitionInput) defaultTransitionInput.value = settings.defaultTransition;
+  if (settings.defaultEncoder && renderEncoderInput) renderEncoderInput.value = settings.defaultEncoder;
   renderOutputEstimate();
 }
 
@@ -877,6 +911,7 @@ function restoreProjectData(data) {
   outputFpsInput.value = String(outputOptions.fps || 30);
   outputQualityInput.value = outputOptions.quality || "standard";
   outputFormatInput.value = outputOptions.format || "mp4";
+  if (renderEncoderInput) renderEncoderInput.value = outputOptions.encoder || "auto";
   outputFileNameInput.value = outputOptions.fileName || createDefaultOutputFileName();
   outputFileNameTouched = Boolean(outputOptions.fileName);
   outputDirectoryInput.value = outputOptions.directory || "outputs/";
@@ -999,6 +1034,7 @@ function updateRenderStatus(job = {}) {
   const total = Number(job.totalPhotos || 0);
   const currentName = job.currentPhotoName ? ` - ${job.currentPhotoName}` : "";
   renderPhotoText.textContent = total ? `\ud604\uc7ac \ucc98\ub9ac: ${current} / ${total}${currentName}` : "\ud604\uc7ac \ucc98\ub9ac \uc911\uc778 \uc0ac\uc9c4 \uc5c6\uc74c";
+  if (activeEncoderText && job.encoder) activeEncoderText.textContent = describeEncoder(job.encoder, job.encoderCodec);
   renderLogLines(job.logs || []);
 }
 
@@ -1160,6 +1196,7 @@ function newProject() {
   outputFpsInput.value = "30";
   outputQualityInput.value = "standard";
   outputFormatInput.value = "mp4";
+  if (renderEncoderInput) renderEncoderInput.value = "auto";
   outputDirectoryInput.value = "outputs/";
   outputFileNameTouched = false;
   updateOutputFileName();
@@ -2072,8 +2109,10 @@ endingCaptionInput.addEventListener("input", () => {
   outputFpsInput,
   outputQualityInput,
   outputFormatInput,
+  renderEncoderInput,
   outputDirectoryInput
 ].forEach(input => {
+  if (!input) return;
   input.addEventListener("input", renderOutputEstimate);
   input.addEventListener("change", renderOutputEstimate);
 });
@@ -2208,6 +2247,7 @@ renderList();
 renderAuthState();
 loadLicenseStatus().catch(error => { authMessage.textContent = error.message; });
 checkForUpdates();
+loadRenderEncoders();
 loadOutputs();
 loadRenderQueue();
 queuePollTimer = setInterval(loadRenderQueue, 2000);

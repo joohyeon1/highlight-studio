@@ -17,9 +17,16 @@ const MAX_PHOTOS = Number(process.env.HIGHLIGHT_MAX_PHOTOS || 100);
 const PHOTO_SECONDS = Number(process.env.HIGHLIGHT_PHOTO_SECONDS || 2);
 const SUPPORTED_RENDER_TRANSITIONS = new Set(["none", "fade", "crossfade"]);
 const SUPPORTED_RENDER_EFFECTS = new Set(["none", "slowZoomIn", "slowZoomOut"]);
+const RENDER_ENCODERS = {
+  cpu: { value: "cpu", label: "CPU", codec: "libx264", vendor: "CPU" },
+  nvenc: { value: "nvenc", label: "NVIDIA NVENC", codec: "h264_nvenc", vendor: "NVIDIA" },
+  qsv: { value: "qsv", label: "Intel Quick Sync", codec: "h264_qsv", vendor: "Intel" },
+  amf: { value: "amf", label: "AMD AMF", codec: "h264_amf", vendor: "AMD" }
+};
 const renderJobs = new Map();
 const renderQueue = [];
 let activeRenderJobId = null;
+let encoderDetectionCache = null;
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -192,6 +199,9 @@ function publicJob(job) {
     bytes: job.bytes,
     error: job.error,
     logs: job.logs,
+    encoderRequested: job.encoderRequested || "auto",
+    encoder: job.encoder || "",
+    encoderCodec: job.encoderCodec || "",
     queuePosition: getQueuePosition(job),
     createdAt: job.createdAt,
     startedAt: job.startedAt,
@@ -215,6 +225,8 @@ function publicQueue() {
       startedAt: job.startedAt,
       completedAt: job.completedAt,
       filename: job.filename,
+      encoder: job.encoder || "",
+      encoderCodec: job.encoderCodec || "",
       error: job.error
     }));
 }
@@ -259,6 +271,104 @@ function checkFfmpeg() {
     child.on("error", () => resolve(false));
     child.on("close", code => resolve(code === 0));
   });
+}
+
+function getFfmpegEncodersText() {
+  return new Promise(resolve => {
+    let output = "";
+    const child = spawn(ffmpegPath, ["-hide_banner", "-encoders"], { windowsHide: true });
+    child.stdout.on("data", chunk => { output += chunk.toString(); });
+    child.stderr.on("data", chunk => { output += chunk.toString(); });
+    child.on("error", () => resolve(""));
+    child.on("close", () => resolve(output));
+  });
+}
+
+function probeFfmpegEncoder(codec) {
+  return new Promise(resolve => {
+    const args = [
+      "-hide_banner",
+      "-loglevel", "error",
+      "-f", "lavfi",
+      "-i", "color=c=black:s=64x64:d=0.2",
+      "-frames:v", "1",
+      "-c:v", codec,
+      "-f", "null",
+      "-"
+    ];
+    const child = spawn(ffmpegPath, args, { windowsHide: true });
+    child.on("error", () => resolve(false));
+    child.on("close", code => resolve(code === 0));
+  });
+}
+
+async function detectRenderEncoders(options = {}) {
+  if (encoderDetectionCache && !options.force) return encoderDetectionCache;
+  const ffmpegReady = await checkFfmpeg();
+  const encodersText = ffmpegReady ? await getFfmpegEncodersText() : "";
+  const available = [];
+  for (const encoder of Object.values(RENDER_ENCODERS)) {
+    const compiled = ffmpegReady && encodersText.includes(encoder.codec);
+    const availableInRuntime = compiled ? await probeFfmpegEncoder(encoder.codec) : false;
+    available.push({
+      ...encoder,
+      compiled,
+      available: availableInRuntime
+    });
+  }
+  const auto = available.find(encoder => ["nvenc", "qsv", "amf"].includes(encoder.value) && encoder.available)
+    || available.find(encoder => encoder.value === "cpu" && encoder.available)
+    || { ...RENDER_ENCODERS.cpu, available: false };
+  encoderDetectionCache = {
+    ok: ffmpegReady,
+    selected: auto.value,
+    selectedCodec: auto.codec,
+    encoders: available,
+    checkedAt: new Date().toISOString()
+  };
+  return encoderDetectionCache;
+}
+
+function normalizeRenderEncoder(value) {
+  const requested = String(value || "auto");
+  if (requested === "auto") return "auto";
+  return RENDER_ENCODERS[requested] ? requested : "auto";
+}
+
+async function resolveRenderEncoder(requestedValue, job) {
+  const requested = normalizeRenderEncoder(requestedValue);
+  const detected = await detectRenderEncoders();
+  if (requested === "auto") {
+    const selected = detected.selected || "cpu";
+    pushJobLog(job, `렌더링 인코더 자동 선택: ${RENDER_ENCODERS[selected]?.label || "CPU"}`);
+    return { requested, selected, detected };
+  }
+  const target = detected.encoders.find(encoder => encoder.value === requested);
+  if (target?.available) {
+    pushJobLog(job, `렌더링 인코더 선택: ${target.label}`);
+    return { requested, selected: requested, detected };
+  }
+  pushJobLog(job, `${RENDER_ENCODERS[requested]?.label || requested} 미지원 - CPU 렌더링으로 전환`);
+  return { requested, selected: "cpu", detected };
+}
+
+function getEncoderArgs(encoderValue, quality) {
+  const encoder = RENDER_ENCODERS[encoderValue] || RENDER_ENCODERS.cpu;
+  if (encoder.value === "cpu") return ["-c:v", encoder.codec, ...getQualityArgs(quality)];
+  if (encoder.value === "nvenc") {
+    const preset = quality === "best" ? "p5" : quality === "high" ? "p4" : "p1";
+    const cq = quality === "best" ? "17" : quality === "high" ? "21" : "24";
+    return ["-c:v", encoder.codec, "-preset", preset, "-cq", cq, "-b:v", "0"];
+  }
+  if (encoder.value === "qsv") {
+    const globalQuality = quality === "best" ? "18" : quality === "high" ? "22" : "26";
+    return ["-c:v", encoder.codec, "-global_quality", globalQuality, "-look_ahead", "0"];
+  }
+  if (encoder.value === "amf") {
+    const qp = quality === "best" ? "18" : quality === "high" ? "22" : "26";
+    return ["-c:v", encoder.codec, "-quality", "balanced", "-qp_i", qp, "-qp_p", qp];
+  }
+  return ["-c:v", "libx264", ...getQualityArgs(quality)];
 }
 
 function ffmpegListPath(filePath) {
@@ -380,6 +490,11 @@ async function createRenderFromProject(project, files, job) {
   const outputOptions = project.video?.outputOptions || {};
   const { width, height } = getResolution(outputOptions);
   const fps = Math.max(24, Math.min(60, Number(outputOptions.fps || 30)));
+  const encoderPlan = await resolveRenderEncoder(outputOptions.encoder || project.encoder || "auto", job);
+  job.encoderRequested = encoderPlan.requested;
+  job.encoder = encoderPlan.selected;
+  job.encoderCodec = RENDER_ENCODERS[encoderPlan.selected]?.codec || "libx264";
+  pushJobLog(job, `현재 사용 인코더: ${RENDER_ENCODERS[encoderPlan.selected]?.label || "CPU"} (${job.encoderCodec})`);
   const outputPath = uniqueOutputPath(outputOptions.fileName || `${safeName(project.video?.title || "highlight-studio")}.mp4`);
   const segmentPaths = [];
 
@@ -403,7 +518,7 @@ async function createRenderFromProject(project, files, job) {
       if (photo.transitionAfter && photo.transitionAfter.type && photo.transitionAfter.type !== "none") {
         pushJobLog(job, `전환효과 적용: ${photo.transitionAfter.type}`);
       }
-      await runFfmpeg([
+      const segmentArgs = [
         "-y",
         "-loop", "1",
         "-t", String(duration),
@@ -411,10 +526,31 @@ async function createRenderFromProject(project, files, job) {
         "-vf", buildSceneFilter(photo, width, height, fps, duration),
         "-r", String(fps),
         "-an",
-        "-c:v", "libx264",
-        ...getQualityArgs(outputOptions.quality),
+        ...getEncoderArgs(job.encoder, outputOptions.quality),
         segmentPath
-      ], job);
+      ];
+      try {
+        await runFfmpeg(segmentArgs, job);
+      } catch (error) {
+        if (job.encoder !== "cpu") {
+          pushJobLog(job, `${job.encoderCodec} 인코딩 실패 - CPU(libx264)로 자동 재시도`);
+          job.encoder = "cpu";
+          job.encoderCodec = "libx264";
+          await runFfmpeg([
+            "-y",
+            "-loop", "1",
+            "-t", String(duration),
+            "-i", item.file.path,
+            "-vf", buildSceneFilter(photo, width, height, fps, duration),
+            "-r", String(fps),
+            "-an",
+            ...getEncoderArgs("cpu", outputOptions.quality),
+            segmentPath
+          ], job);
+        } else {
+          throw error;
+        }
+      }
       segmentPaths.push({ path: segmentPath, duration });
     }
 
@@ -582,6 +718,21 @@ app.get("/api/health", (_req, res) => {
     firebase: false,
     firestore: false
   });
+});
+
+app.get("/api/render/encoders", async (req, res) => {
+  try {
+    const detected = await detectRenderEncoders({ force: req.query.refresh === "1" });
+    res.json({
+      ok: true,
+      selected: detected.selected,
+      selectedCodec: detected.selectedCodec,
+      checkedAt: detected.checkedAt,
+      encoders: detected.encoders
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message || "렌더링 인코더를 확인하지 못했습니다." });
+  }
 });
 
 app.post("/api/auth/login", (req, res) => {

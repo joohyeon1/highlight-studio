@@ -236,6 +236,19 @@
               <option value="gif" disabled>GIF (&#52628;&#54980;)</option>
             </select>
           </label>
+          <label>GPU &#44032;&#49549;
+            <select id="renderEncoderInput">
+              <option value="auto" selected>&#51088;&#46041; &#49440;&#53469;</option>
+              <option value="cpu">CPU</option>
+              <option value="nvenc">NVIDIA NVENC</option>
+              <option value="qsv">Intel Quick Sync</option>
+              <option value="amf">AMD AMF</option>
+            </select>
+          </label>
+          <div class="encoder-status">
+            <div><span>&#44048;&#51648; &#44208;&#44284;</span><strong id="encoderDetectionText">&#54869;&#51064; &#51473;</strong></div>
+            <div><span>&#54788;&#51116; &#51064;&#53076;&#45908;</span><strong id="activeEncoderText">CPU</strong></div>
+          </div>
           <label>&#52636;&#47141; &#54028;&#51068;&#47749;
             <input id="outputFileNameInput" type="text" maxlength="120">
           </label>

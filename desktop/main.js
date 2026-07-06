@@ -24,7 +24,8 @@ function defaultSettings() {
     tempDir: path.join(storageRoot, "uploads"),
     defaultResolution: "1080x1920",
     defaultFps: 30,
-    defaultTransition: "fade"
+    defaultTransition: "fade",
+    defaultEncoder: "auto"
   };
 }
 
@@ -266,6 +267,17 @@ function settingsHtml() {
         ].map(([value, label]) => `<option value="${value}"${settings.defaultTransition === value ? " selected" : ""}>${label}</option>`).join("")}
       </select>
     </label>
+    <label>기본 렌더링 인코더
+      <select id="defaultEncoder">
+        ${[
+          ["auto", "자동 선택"],
+          ["cpu", "CPU"],
+          ["nvenc", "NVIDIA NVENC"],
+          ["qsv", "Intel Quick Sync"],
+          ["amf", "AMD AMF"]
+        ].map(([value, label]) => `<option value="${value}"${settings.defaultEncoder === value ? " selected" : ""}>${label}</option>`).join("")}
+      </select>
+    </label>
     <button id="save">저장</button>
     <script>
       const { ipcRenderer } = require("electron");
@@ -275,7 +287,8 @@ function settingsHtml() {
           tempDir: document.getElementById("tempDir").value,
           defaultResolution: document.getElementById("defaultResolution").value,
           defaultFps: Number(document.getElementById("defaultFps").value),
-          defaultTransition: document.getElementById("defaultTransition").value
+          defaultTransition: document.getElementById("defaultTransition").value,
+          defaultEncoder: document.getElementById("defaultEncoder").value
         });
       });
     </script>
