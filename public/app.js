@@ -10,6 +10,8 @@ const selectAllButton = document.getElementById("selectAllButton");
 const clearSelectionButton = document.getElementById("clearSelectionButton");
 const clearAllButton = document.getElementById("clearAllButton");
 const aiAnalyzeButton = document.getElementById("aiAnalyzeButton");
+const aiDuplicateButton = document.getElementById("aiDuplicateButton");
+const selectExcludedButton = document.getElementById("selectExcludedButton");
 const aiPhotoFilter = document.getElementById("aiPhotoFilter");
 const aiAnalyzeStatus = document.getElementById("aiAnalyzeStatus");
 const aiAnalyzeProgressBar = document.getElementById("aiAnalyzeProgressBar");
@@ -1098,6 +1100,12 @@ function serializePhoto(photo, index) {
     aiExcluded: Boolean(photo.aiExcluded),
     aiReasons: Array.isArray(photo.aiReasons) ? photo.aiReasons : [],
     aiAnalysis: photo.aiAnalysis || null,
+    aiQuality: photo.aiQuality || null,
+    excludeRecommended: Boolean(photo.excludeRecommended || photo.aiQuality?.excludeRecommended),
+    imageHash: photo.imageHash || "",
+    aiDuplicate: photo.aiDuplicate || null,
+    duplicateGroupId: photo.duplicateGroupId || "",
+    representative: Boolean(photo.representative),
     storyRole: photo.storyRole || ""
   };
 }
@@ -1221,6 +1229,12 @@ function restoreProjectData(data) {
         aiExcluded: Boolean(photo.aiExcluded),
         aiReasons: Array.isArray(photo.aiReasons) ? photo.aiReasons : [],
         aiAnalysis: photo.aiAnalysis || null,
+        aiQuality: photo.aiQuality || null,
+        excludeRecommended: Boolean(photo.excludeRecommended || photo.aiQuality?.excludeRecommended),
+        imageHash: photo.imageHash || "",
+        aiDuplicate: photo.aiDuplicate || null,
+        duplicateGroupId: photo.duplicateGroupId || "",
+        representative: Boolean(photo.representative),
         storyRole: photo.storyRole || ""
       };
     });
@@ -1265,9 +1279,10 @@ function getFilteredPhotos() {
     const studentId = activeFilter.slice("student:".length);
     filtered = filtered.filter(photo => photo.studentIds.has(studentId));
   }
-  if (activeAiPhotoFilter === "recommended") return filtered.filter(photo => photo.aiAnalysis?.quality === "recommended" || (photo.recommended && !photo.aiExcluded));
-  if (activeAiPhotoFilter === "normal") return filtered.filter(photo => photo.aiAnalysis?.quality === "normal");
-  if (activeAiPhotoFilter === "excluded") return filtered.filter(photo => photo.aiAnalysis?.quality === "excluded" || photo.aiExcluded);
+  if (activeAiPhotoFilter === "recommended") return filtered.filter(photo => photo.aiQuality?.grade === "good" || photo.aiAnalysis?.quality === "recommended" || (photo.recommended && !photo.aiExcluded));
+  if (activeAiPhotoFilter === "duplicate") return filtered.filter(photo => photo.aiDuplicate?.isDuplicateCandidate);
+  if (activeAiPhotoFilter === "normal") return filtered.filter(photo => photo.aiQuality?.grade === "normal" || photo.aiAnalysis?.quality === "normal");
+  if (activeAiPhotoFilter === "excluded") return filtered.filter(photo => photo.aiQuality?.excludeRecommended || photo.excludeRecommended || photo.aiAnalysis?.quality === "excluded" || photo.aiExcluded);
   return filtered;
 }
 
@@ -1530,6 +1545,8 @@ function newProject() {
   activeFilter = "all";
   activeAiPhotoFilter = "all";
   if (aiPhotoFilter) aiPhotoFilter.value = "all";
+  if (aiDuplicateButton) aiDuplicateButton.disabled = false;
+  if (selectExcludedButton) selectExcludedButton.disabled = false;
   updateAiAnalyzeProgress(0, 0, "AI 분석 대기");
   activeTransitionPhotoId = null;
   projectName = "\ud0dc\uad8c\ub3c4 \ud558\uc774\ub77c\uc774\ud2b8";
@@ -1683,15 +1700,60 @@ function aiQualityFromScore(score = 0, analysis = {}) {
   return "normal";
 }
 
+function buildAiQuality(analysis = {}, duplicate = null, representative = false) {
+  const score = Math.max(0, Math.min(100, Math.round(Number(analysis.score || 0))));
+  const width = Number(analysis.width || 0);
+  const height = Number(analysis.height || 0);
+  const minSide = Math.min(width, height);
+  const pixelCount = width * height;
+  const reasons = [];
+  if (score <= 45) reasons.push("\uc885\ud569 \uc810\uc218 \ub0ae\uc74c");
+  if (Number(analysis.blur || 0) < 35) reasons.push("\ud754\ub4e4\ub9bc");
+  if (Number(analysis.sharpness || 0) < 35) reasons.push("\uc120\uba85\ub3c4 \ub0ae\uc74c");
+  if (Number(analysis.brightness || 0) < 25) reasons.push("\uc5b4\ub450\uc6c0");
+  if (Number(analysis.brightness || 0) > 92) reasons.push("\ub108\ubb34 \ubc1d\uc74c");
+  if (Number(analysis.noise || 0) > 70) reasons.push("\ub178\uc774\uc988");
+  if (minSide > 0 && (minSide < 720 || pixelCount < 900000)) reasons.push("\uc800\ud574\uc0c1\ub3c4");
+  if (duplicate?.isDuplicateCandidate && !representative) reasons.push("\uc911\ubcf5 \uc0ac\uc9c4");
+  const excludeRecommended = reasons.length > 0;
+  const grade = excludeRecommended ? "exclude" : score >= 75 ? "good" : "normal";
+  return {
+    score,
+    grade,
+    excludeRecommended,
+    reasons: Array.from(new Set(reasons))
+  };
+}
+
 function renderAiPhotoBadge(photo) {
   const analysis = photo.aiAnalysis;
-  if (!analysis) return `<span class="ai-photo-badge is-empty">AI 분석 전</span>`;
-  const label = aiQualityLabels[analysis.quality] || "보통";
+  const duplicate = photo.aiDuplicate;
+  const quality = photo.aiQuality;
+  if (!analysis && !duplicate && !quality) return `<span class="ai-photo-badge is-empty">AI 분석 전</span>`;
+  const duplicateMarkup = duplicate?.isDuplicateCandidate
+    ? `<small>${photo.representative ? "대표 추천" : "중복 후보"} · ${Math.round(duplicate.similarity || 0)}% · ${escapeHtml(duplicate.reason || "비슷한 사진")}</small>`
+    : "";
+  const qualityMarkup = quality?.excludeRecommended
+    ? `<small>제외 추천: ${escapeHtml((quality.reasons || []).join(", "))}</small>`
+    : "";
+  if (!analysis) {
+    const title = quality?.grade === "exclude" ? "제외 추천" : photo.representative ? "대표 추천" : "중복 후보";
+    return `
+      <div class="ai-photo-result is-${quality?.grade || "duplicate"}${duplicate?.isDuplicateCandidate ? " is-duplicate" : ""}">
+        <strong>${title}</strong>
+        ${qualityMarkup}
+        ${duplicateMarkup}
+      </div>`;
+  }
+  const label = quality?.grade === "exclude" ? "제외 추천" : quality?.grade === "good" ? "추천" : aiQualityLabels[analysis.quality] || "보통";
+  const resultClass = quality?.grade === "exclude" ? "excluded" : analysis.quality;
   return `
-    <div class="ai-photo-result is-${analysis.quality}">
-      <strong>${Math.round(analysis.score)}점</strong>
+    <div class="ai-photo-result is-${resultClass}${duplicate?.isDuplicateCandidate ? " is-duplicate" : ""}">
+      <strong>${Math.round(quality?.score ?? analysis.score)}점</strong>
       <span>${aiStars(analysis.score)} / ${label}</span>
       <small>흔들림 ${Math.round(analysis.blur)} · 선명도 ${Math.round(analysis.sharpness)} · 밝기 ${Math.round(analysis.brightness)} · 노이즈 ${Math.round(analysis.noise)}</small>
+      ${qualityMarkup}
+      ${duplicateMarkup}
     </div>`;
 }
 
@@ -2020,6 +2082,12 @@ async function addFiles(fileList) {
       aiExcluded: false,
       aiReasons: [],
       aiAnalysis: null,
+      aiQuality: null,
+      excludeRecommended: false,
+      imageHash: "",
+      aiDuplicate: null,
+      duplicateGroupId: "",
+      representative: false,
       storyRole: "",
       transitionAfter: createTransition(defaultTransition, 0.5)
     };
@@ -2124,6 +2192,28 @@ async function analyzePhotoPixels(photo) {
         }
       }
       const count = size * size;
+      const hashPixels = [];
+      const hashSize = 8;
+      const blockSize = size / hashSize;
+      for (let hy = 0; hy < hashSize; hy += 1) {
+        for (let hx = 0; hx < hashSize; hx += 1) {
+          let block = 0;
+          let blockCount = 0;
+          const startY = Math.floor(hy * blockSize);
+          const endY = Math.floor((hy + 1) * blockSize);
+          const startX = Math.floor(hx * blockSize);
+          const endX = Math.floor((hx + 1) * blockSize);
+          for (let y = startY; y < endY; y += 1) {
+            for (let x = startX; x < endX; x += 1) {
+              block += gray[y * size + x] || 0;
+              blockCount += 1;
+            }
+          }
+          hashPixels.push(blockCount ? block / blockCount : 0);
+        }
+      }
+      const hashAverage = hashPixels.reduce((sum, value) => sum + value, 0) / hashPixels.length;
+      const imageHash = hashPixels.map(value => (value >= hashAverage ? "1" : "0")).join("");
       const brightnessScore = Math.max(0, Math.min(100, (brightness / count / 255) * 100));
       const sharpnessScore = Math.max(0, Math.min(100, (edgeEnergy / count) * 2.2));
       const blurScore = Math.max(0, Math.min(100, sharpnessScore));
@@ -2147,6 +2237,7 @@ async function analyzePhotoPixels(photo) {
         height: photo.height || image.naturalHeight || 0,
         fileSize: photo.file?.size || photo.fileSize || 0,
         capturedAt: photo.file?.lastModified ? new Date(photo.file.lastModified).toISOString() : "",
+        imageHash,
         score,
         analyzedAt: new Date().toISOString()
       };
@@ -2166,6 +2257,7 @@ async function analyzePhotoPixels(photo) {
       height: photo.height || 0,
       fileSize: photo.file?.size || photo.fileSize || 0,
       capturedAt: photo.file?.lastModified ? new Date(photo.file.lastModified).toISOString() : "",
+      imageHash: "",
       score: 0,
       quality: "excluded",
       analyzedAt: new Date().toISOString(),
@@ -2231,6 +2323,114 @@ function updateAiAnalyzeProgress(done = 0, total = photos.length, text = "") {
   aiAnalyzeProgressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
 }
 
+function hashDistance(a = "", b = "") {
+  if (!a || !b || a.length !== b.length) return 64;
+  let distance = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) distance += 1;
+  }
+  return distance;
+}
+
+function duplicateSimilarity(distance) {
+  return Math.max(0, Math.min(100, Math.round(100 - (distance / 64) * 100)));
+}
+
+function resetDuplicateFlags() {
+  photos.forEach(photo => {
+    photo.aiDuplicate = null;
+    photo.duplicateGroupId = "";
+    photo.representative = false;
+  });
+}
+
+function refreshPhotoQuality(photo) {
+  if (!photo.aiAnalysis) {
+    photo.aiQuality = null;
+    photo.excludeRecommended = false;
+    return photo.aiQuality;
+  }
+  photo.aiQuality = buildAiQuality(photo.aiAnalysis, photo.aiDuplicate, photo.representative);
+  photo.excludeRecommended = photo.aiQuality.excludeRecommended;
+  photo.aiExcluded = photo.excludeRecommended;
+  photo.recommended = Boolean(photo.locked || photo.aiQuality.grade === "good" || (photo.representative && !photo.excludeRecommended));
+  photo.aiReasons = Array.from(new Set([...(photo.aiReasons || []), ...(photo.aiQuality.reasons || [])]));
+  return photo.aiQuality;
+}
+
+function refreshAllPhotoQuality() {
+  photos.forEach(refreshPhotoQuality);
+}
+
+function applyDuplicateGroups() {
+  resetDuplicateFlags();
+  const parent = new Map(photos.map(photo => [photo.id, photo.id]));
+  const find = id => {
+    const current = parent.get(id);
+    if (current === id) return id;
+    const root = find(current);
+    parent.set(id, root);
+    return root;
+  };
+  const union = (a, b) => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent.set(rootB, rootA);
+  };
+
+  for (let i = 0; i < photos.length; i += 1) {
+    for (let j = i + 1; j < photos.length; j += 1) {
+      const distance = hashDistance(photos[i].imageHash, photos[j].imageHash);
+      if (distance <= 15) union(photos[i].id, photos[j].id);
+    }
+  }
+
+  const groups = new Map();
+  photos.forEach(photo => {
+    if (!photo.imageHash) return;
+    const root = find(photo.id);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(photo);
+  });
+
+  let groupNumber = 1;
+  groups.forEach(group => {
+    if (group.length < 2) return;
+    const groupId = `dup-${String(groupNumber).padStart(3, "0")}`;
+    groupNumber += 1;
+    const representative = group
+      .slice()
+      .sort((a, b) => (Number(b.aiScore || 0) - Number(a.aiScore || 0)) || ((b.width * b.height) - (a.width * a.height)))[0];
+    group.forEach(photo => {
+      const bestDistance = group
+        .filter(item => item.id !== photo.id)
+        .reduce((min, item) => Math.min(min, hashDistance(photo.imageHash, item.imageHash)), 64);
+      const similarity = duplicateSimilarity(bestDistance);
+      const reason = bestDistance <= 8 ? "거의 동일한 사진" : "비슷한 사진";
+      photo.duplicateGroupId = groupId;
+      photo.representative = photo.id === representative.id;
+      photo.aiDuplicate = {
+        isDuplicateCandidate: true,
+        groupId,
+        similarity,
+        reason
+      };
+      if (!photo.representative) {
+        photo.aiExcluded = true;
+        photo.excludeRecommended = true;
+        photo.recommended = false;
+        photo.aiReasons = Array.from(new Set([...(photo.aiReasons || []), reason, `${groupId} 대표 외 중복 후보`]));
+      } else {
+        photo.recommended = true;
+        photo.aiReasons = Array.from(new Set([...(photo.aiReasons || []), `${groupId} 대표 추천`]));
+      }
+    });
+  });
+
+  refreshAllPhotoQuality();
+  return groupNumber - 1;
+}
+
 async function runAiPhotoAnalysis() {
   if (!photos.length || aiAnalyzeRunning) return;
   aiAnalyzeRunning = true;
@@ -2243,6 +2443,7 @@ async function runAiPhotoAnalysis() {
     updateAiAnalyzeProgress(index, photos.length, `${index + 1} / ${photos.length} 분석중...`);
     const analysis = await analyzePhotoPixels(photo);
     photo.aiAnalysis = analysis;
+    photo.imageHash = analysis.imageHash || "";
     photo.aiScore = analysis.score;
     photo.aiExcluded = analysis.quality === "excluded";
     photo.recommended = photo.locked || analysis.quality === "recommended";
@@ -2253,24 +2454,54 @@ async function runAiPhotoAnalysis() {
       `노이즈 ${analysis.noise}`,
       analysis.orientation
     ];
+    refreshPhotoQuality(photo);
     await new Promise(resolve => setTimeout(resolve, 0));
   }
 
+  const duplicateGroupCount = applyDuplicateGroups();
   aiAnalyzeRunning = false;
   aiAnalyzeButton.disabled = false;
-  updateAiAnalyzeProgress(photos.length, photos.length, `${photos.length} / ${photos.length} 분석 완료`);
+  updateAiAnalyzeProgress(photos.length, photos.length, `${photos.length} / ${photos.length} 분석 완료 · 중복 ${duplicateGroupCount}그룹`);
   renderList();
   renderAiAnalysis(photos.map(photo => ({
     id: photo.id,
     fileName: photo.file?.name || photo.fileName,
-    score: photo.aiScore || 0,
-    recommended: photo.recommended,
-    excluded: photo.aiExcluded,
+    score: photo.aiQuality?.score ?? photo.aiScore ?? 0,
+    recommended: photo.aiQuality?.grade === "good" || photo.recommended,
+    excluded: photo.aiQuality?.excludeRecommended || photo.aiExcluded,
     reasons: photo.aiReasons || [],
-    excludeReasons: photo.aiExcluded ? ["제외 추천"] : []
+    excludeReasons: photo.aiQuality?.excludeRecommended ? photo.aiQuality.reasons || [] : photo.aiExcluded ? ["제외 추천"] : []
   })));
   autosaveProject();
-  setMessage("AI 사진 분석을 완료했습니다. 결과는 프로젝트 저장 파일에 포함됩니다.");
+  setMessage(`AI 사진 분석을 완료했습니다. 중복 후보 ${duplicateGroupCount}그룹을 찾았습니다. 결과는 프로젝트 저장 파일에 포함됩니다.`);
+}
+
+async function runDuplicateDetection() {
+  if (!photos.length || aiAnalyzeRunning) return;
+  aiAnalyzeRunning = true;
+  if (aiDuplicateButton) aiDuplicateButton.disabled = true;
+  if (aiAnalyzeButton) aiAnalyzeButton.disabled = true;
+  updateAiAnalyzeProgress(0, photos.length, "중복 사진 분석 준비 중...");
+  for (let index = 0; index < photos.length; index += 1) {
+    const photo = photos[index];
+    if (!photo.imageHash) {
+      updateAiAnalyzeProgress(index, photos.length, `${index + 1} / ${photos.length} 해시 생성중...`);
+      const analysis = await analyzePhotoPixels(photo);
+      photo.aiAnalysis = photo.aiAnalysis || analysis;
+      photo.imageHash = analysis.imageHash || "";
+      photo.aiScore = photo.aiScore || analysis.score;
+      refreshPhotoQuality(photo);
+    }
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  const duplicateGroupCount = applyDuplicateGroups();
+  aiAnalyzeRunning = false;
+  if (aiDuplicateButton) aiDuplicateButton.disabled = false;
+  if (aiAnalyzeButton) aiAnalyzeButton.disabled = false;
+  updateAiAnalyzeProgress(photos.length, photos.length, `중복 사진 분석 완료 · ${duplicateGroupCount}그룹`);
+  renderList();
+  autosaveProject();
+  setMessage(`중복 사진 찾기를 완료했습니다. ${duplicateGroupCount}개 그룹이 표시됩니다. 자동 삭제는 하지 않았습니다.`);
 }
 
 function applyStoryboard(storyboard) {
@@ -2477,6 +2708,16 @@ function selectFilteredPhotos() {
   selectedPhotoIds = new Set(targetIds);
   photos.forEach(photo => { photo.selected = selectedPhotoIds.has(photo.id); });
   setMessage(`\ud604\uc7ac \ud544\ud130\uc758 \uc0ac\uc9c4 ${targetIds.length}\uc7a5\uc744 \uc120\ud0dd\ud588\uc2b5\ub2c8\ub2e4.`);
+  renderList();
+}
+
+function selectExcludedRecommendedPhotos() {
+  const targetIds = photos
+    .filter(photo => photo.aiQuality?.excludeRecommended || photo.excludeRecommended || photo.aiExcluded)
+    .map(photo => photo.id);
+  selectedPhotoIds = new Set(targetIds);
+  photos.forEach(photo => { photo.selected = selectedPhotoIds.has(photo.id); });
+  setMessage(`\uc81c\uc678 \ucd94\ucc9c \uc0ac\uc9c4 ${targetIds.length}\uc7a5\uc744 \uc120\ud0dd\ud588\uc2b5\ub2c8\ub2e4. \uc790\ub3d9 \uc0ad\uc81c\ub294 \ud558\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4.`);
   renderList();
 }
 
@@ -2740,6 +2981,8 @@ storyboardList.addEventListener("drop", event => {
 });
 
 if (aiAnalyzeButton) aiAnalyzeButton.addEventListener("click", runAiPhotoAnalysis);
+if (aiDuplicateButton) aiDuplicateButton.addEventListener("click", runDuplicateDetection);
+if (selectExcludedButton) selectExcludedButton.addEventListener("click", selectExcludedRecommendedPhotos);
 if (aiPhotoFilter) aiPhotoFilter.addEventListener("change", () => {
   activeAiPhotoFilter = aiPhotoFilter.value;
   renderList();
