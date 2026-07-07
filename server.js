@@ -1174,6 +1174,22 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, app: "Highlight Studio", port: PORT, ffmpeg: ffmpegPath });
 });
 
+app.options("/api/ping", (_req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+  res.sendStatus(204);
+});
+
+app.get("/api/ping", (_req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.json({
+    ok: true,
+    app: "Highlight Studio",
+    version: "1.0.0"
+  });
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
