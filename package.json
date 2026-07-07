@@ -34,6 +34,13 @@
       "buildResources": "build",
       "output": "dist"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "joohyeon1",
+        "repo": "highlight-studio"
+      }
+    ],
     "files": [
       "desktop/**/*",
       "public/**/*",

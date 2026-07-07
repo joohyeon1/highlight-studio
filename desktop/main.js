@@ -19,6 +19,17 @@ let settingsWindow;
 let serverModule;
 let serverInstance;
 let settings;
+let ownsInternalServer = false;
+
+const START_FAILED_MESSAGE = [
+  "Highlight Studio를 실행할 수 없습니다.",
+  "",
+  "프로그램을 다시 실행하거나,",
+  "개발 중이라면 아래 명령을 확인하세요.",
+  "",
+  "npm start",
+  "npm run electron"
+].join("\n");
 
 function registerAppProtocol() {
   try {
@@ -159,7 +170,7 @@ function updateSplash(status, percent) {
 async function waitForServer(retries = 60) {
   for (let i = 0; i < retries; i += 1) {
     try {
-      const response = await fetch(`${APP_URL}/api/health`);
+      const response = await fetch(`${APP_URL}/api/ping`);
       if (response.ok) return true;
     } catch (_) {}
     updateSplash("내부 서버 준비 중", Math.min(90, 35 + i));
@@ -168,7 +179,17 @@ async function waitForServer(retries = 60) {
   throw new Error("내부 Express 서버를 시작하지 못했습니다.");
 }
 
-function startInternalServer() {
+async function pingLocalServer() {
+  try {
+    const response = await fetch(`${APP_URL}/api/ping`);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (_) {
+    return null;
+  }
+}
+
+async function startInternalServer() {
   settings = readSettings();
   ensureDir(settings.outputDir);
   ensureDir(settings.tempDir);
@@ -179,8 +200,40 @@ function startInternalServer() {
   process.env.HIGHLIGHT_UPLOAD_DIR = settings.tempDir;
   process.env.HIGHLIGHT_DATA_DIR = settings.dataDir;
 
+  const existingServer = await pingLocalServer();
+  if (existingServer?.ok && existingServer?.app === "Highlight Studio") {
+    ownsInternalServer = false;
+    logApp(`Reusing existing Highlight Studio server: ${APP_URL}`);
+    return;
+  }
+
   serverModule = require(path.join(ROOT_DIR, "server.js"));
-  serverInstance = serverModule.startServer(APP_PORT);
+  await new Promise((resolve, reject) => {
+    const nextServer = serverModule.startServer(APP_PORT);
+    serverInstance = nextServer;
+    ownsInternalServer = true;
+
+    const cleanup = () => {
+      nextServer.off("error", onError);
+      nextServer.off("listening", onListening);
+    };
+    const onError = error => {
+      cleanup();
+      if (error?.code === "EADDRINUSE") {
+        reject(new Error(`localhost:${APP_PORT} 포트를 사용할 수 없습니다. 다른 프로그램이 사용 중인지 확인하세요.`));
+        return;
+      }
+      reject(error);
+    };
+    const onListening = () => {
+      cleanup();
+      resolve();
+    };
+
+    nextServer.once("error", onError);
+    if (nextServer.listening) onListening();
+    else nextServer.once("listening", onListening);
+  });
   logApp(`Internal Express server started: ${APP_URL}`);
 }
 
@@ -363,6 +416,8 @@ async function showAboutDialog() {
 }
 
 async function checkForUpdates() {
+  // TODO: Connect electron-updater to GitHub Releases when the public release
+  // channel is ready. This step intentionally keeps update checks local-only.
   try {
     const response = await fetch(`${APP_URL}/api/update/check`);
     const result = await response.json();
@@ -414,14 +469,14 @@ if (!gotSingleInstanceLock) {
     registerAppProtocol();
     createSplashWindow();
     updateSplash("내부 서버 시작 중", 35);
-    startInternalServer();
+    await startInternalServer();
     await waitForServer();
     updateSplash("메인 화면 여는 중", 95);
     Menu.setApplicationMenu(buildMenu());
     createMainWindow();
   } catch (error) {
     logError(error);
-    dialog.showErrorBox("Highlight Studio 시작 실패", error.message);
+    dialog.showErrorBox("Highlight Studio 시작 실패", `${START_FAILED_MESSAGE}\n\n오류 내용:\n${error.message}`);
     app.quit();
   }
   });
@@ -438,7 +493,7 @@ app.on("before-quit", () => {
   } catch (error) {
     logError(error);
   }
-  if (serverInstance) serverInstance.close();
+  if (ownsInternalServer && serverInstance) serverInstance.close();
 });
 
 process.on("uncaughtException", error => {

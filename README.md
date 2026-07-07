@@ -203,14 +203,33 @@ dist/win-unpacked/Highlight Studio.exe
 Desktop behavior:
 
 - Starts the internal Express server on `localhost:4000`.
+- Reuses an already running Highlight Studio local server when `/api/ping` responds.
 - Opens the main Highlight Studio screen inside Electron.
 - Stops the internal server when the app exits.
 - Prepares the custom protocol `highlightstudio://open`.
 - If the app is already running, a protocol open request focuses the existing window.
+- Prevents duplicate desktop instances with Electron's single instance lock.
+- Shows a startup guide if the local server cannot start or port `4000` is blocked.
 
 Packaged builds use local AppData folders for uploads, outputs, settings, and logs.
 Photos and videos are still processed locally; no Firestore, Firebase, or long-term
 server storage is used.
+
+Custom protocol:
+
+```text
+highlightstudio://open
+```
+
+The protocol is prepared for Windows installer builds. When called while the app
+is running, the existing Highlight Studio window is focused. When called after
+installation, Windows can launch the registered app and open the local editor.
+
+Auto update:
+
+- Actual auto-update server integration is not enabled yet.
+- The build metadata is prepared for future GitHub Releases publishing.
+- `electron-updater` can be connected in a later step when the release channel is ready.
 
 ## Final Check Notes
 
