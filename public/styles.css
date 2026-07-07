@@ -332,6 +332,41 @@ textarea {
   gap: 8px;
   margin-bottom: 14px;
 }
+.ai-photo-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 220px) minmax(180px, 1fr);
+  gap: 10px;
+  align-items: end;
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+.ai-photo-toolbar label {
+  margin: 0;
+  font-size: 12px;
+}
+.ai-photo-progress {
+  display: grid;
+  gap: 6px;
+  color: #1e40af;
+  font-size: 12px;
+  font-weight: 900;
+}
+.mini-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbeafe;
+}
+.mini-progress span {
+  display: block;
+  width: 0%;
+  height: 100%;
+  background: #2563eb;
+  transition: width .2s ease;
+}
 .toolbar button, .preview-controls button {
   min-height: 40px;
   padding: 0 14px;
@@ -435,6 +470,44 @@ textarea {
   font-weight: 800;
 }
 .row-actions button:disabled { opacity: .42; cursor: not-allowed; }
+.ai-photo-badge,
+.ai-photo-result {
+  display: inline-grid;
+  gap: 2px;
+  align-self: start;
+  max-width: 100%;
+  padding: 7px 9px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+.ai-photo-result strong {
+  color: #0f172a;
+  font-size: 15px;
+}
+.ai-photo-result span {
+  color: #1d4ed8;
+  font-weight: 950;
+}
+.ai-photo-result small {
+  color: #64748b;
+  overflow-wrap: anywhere;
+}
+.ai-photo-result.is-recommended {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+.ai-photo-result.is-normal {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+.ai-photo-result.is-excluded {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
 .preview-panel {
   align-self: start;
   position: sticky;

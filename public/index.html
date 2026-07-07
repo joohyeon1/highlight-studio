@@ -175,6 +175,22 @@
           <button id="clearAllButton" type="button">&#51204;&#52404; &#49325;&#51228;</button>
         </div>
 
+        <div class="ai-photo-toolbar">
+          <button id="aiAnalyzeButton" class="primary-button" type="button">AI &#48516;&#49437;</button>
+          <label>AI &#54596;&#53552;
+            <select id="aiPhotoFilter">
+              <option value="all">&#51204;&#52404;</option>
+              <option value="recommended">&#52628;&#52380; &#49324;&#51652;</option>
+              <option value="normal">&#48372;&#53685;</option>
+              <option value="excluded">&#51228;&#50808; &#52628;&#52380;</option>
+            </select>
+          </label>
+          <div class="ai-photo-progress">
+            <span id="aiAnalyzeStatus">AI &#48516;&#49437; &#45824;&#44592;</span>
+            <div class="mini-progress"><span id="aiAnalyzeProgressBar"></span></div>
+          </div>
+        </div>
+
         <div id="photoList" class="photo-list" aria-live="polite"></div>
       </section>
 

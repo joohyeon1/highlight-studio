@@ -9,6 +9,10 @@ const secondsInput = document.getElementById("secondsInput");
 const selectAllButton = document.getElementById("selectAllButton");
 const clearSelectionButton = document.getElementById("clearSelectionButton");
 const clearAllButton = document.getElementById("clearAllButton");
+const aiAnalyzeButton = document.getElementById("aiAnalyzeButton");
+const aiPhotoFilter = document.getElementById("aiPhotoFilter");
+const aiAnalyzeStatus = document.getElementById("aiAnalyzeStatus");
+const aiAnalyzeProgressBar = document.getElementById("aiAnalyzeProgressBar");
 const largePreview = document.getElementById("largePreview");
 const prevPreviewButton = document.getElementById("prevPreviewButton");
 const nextPreviewButton = document.getElementById("nextPreviewButton");
@@ -228,6 +232,8 @@ let draggedPhotoId = null;
 let draggedTimelinePhotoId = null;
 let draggedStoryboardPhotoId = null;
 let activeFilter = "all";
+let activeAiPhotoFilter = "all";
+let aiAnalyzeRunning = false;
 let timelineZoom = 100;
 let activeTransitionPhotoId = null;
 let projectName = "\ud0dc\uad8c\ub3c4 \ud558\uc774\ub77c\uc774\ud2b8";
@@ -251,6 +257,12 @@ const renderStatusLabels = {
   completed: "\uc644\ub8cc",
   failed: "\uc2e4\ud328",
   canceled: "\ucde8\uc18c"
+};
+
+const aiQualityLabels = {
+  recommended: "좋음",
+  normal: "보통",
+  excluded: "제외 추천"
 };
 
 function escapeHtml(value) {
@@ -1085,6 +1097,7 @@ function serializePhoto(photo, index) {
     aiScore: Number(photo.aiScore || 0),
     aiExcluded: Boolean(photo.aiExcluded),
     aiReasons: Array.isArray(photo.aiReasons) ? photo.aiReasons : [],
+    aiAnalysis: photo.aiAnalysis || null,
     storyRole: photo.storyRole || ""
   };
 }
@@ -1207,6 +1220,7 @@ function restoreProjectData(data) {
         aiScore: Number(photo.aiScore || 0),
         aiExcluded: Boolean(photo.aiExcluded),
         aiReasons: Array.isArray(photo.aiReasons) ? photo.aiReasons : [],
+        aiAnalysis: photo.aiAnalysis || null,
         storyRole: photo.storyRole || ""
       };
     });
@@ -1245,12 +1259,16 @@ function getImageSize(url) {
 }
 
 function getFilteredPhotos() {
-  if (activeFilter === "untagged") return photos.filter(photo => photo.studentIds.size === 0);
+  let filtered = photos;
+  if (activeFilter === "untagged") filtered = filtered.filter(photo => photo.studentIds.size === 0);
   if (activeFilter.startsWith("student:")) {
     const studentId = activeFilter.slice("student:".length);
-    return photos.filter(photo => photo.studentIds.has(studentId));
+    filtered = filtered.filter(photo => photo.studentIds.has(studentId));
   }
-  return photos;
+  if (activeAiPhotoFilter === "recommended") return filtered.filter(photo => photo.aiAnalysis?.quality === "recommended" || (photo.recommended && !photo.aiExcluded));
+  if (activeAiPhotoFilter === "normal") return filtered.filter(photo => photo.aiAnalysis?.quality === "normal");
+  if (activeAiPhotoFilter === "excluded") return filtered.filter(photo => photo.aiAnalysis?.quality === "excluded" || photo.aiExcluded);
+  return filtered;
 }
 
 function updateStats() {
@@ -1510,6 +1528,9 @@ function newProject() {
   selectedPhotoIds = new Set();
   activePreviewId = null;
   activeFilter = "all";
+  activeAiPhotoFilter = "all";
+  if (aiPhotoFilter) aiPhotoFilter.value = "all";
+  updateAiAnalyzeProgress(0, 0, "AI 분석 대기");
   activeTransitionPhotoId = null;
   projectName = "\ud0dc\uad8c\ub3c4 \ud558\uc774\ub77c\uc774\ud2b8";
   projectCreatedAt = new Date().toISOString();
@@ -1651,6 +1672,29 @@ function renderPhotoEffectControl(photo) {
   `;
 }
 
+function aiStars(score = 0) {
+  const filled = Math.max(0, Math.min(5, Math.round(Number(score || 0) / 20)));
+  return `${"★".repeat(filled)}${"☆".repeat(5 - filled)}`;
+}
+
+function aiQualityFromScore(score = 0, analysis = {}) {
+  if (analysis.blur < 35 || analysis.sharpness < 35 || analysis.brightness < 25 || analysis.brightness > 92 || score < 45) return "excluded";
+  if (score >= 75) return "recommended";
+  return "normal";
+}
+
+function renderAiPhotoBadge(photo) {
+  const analysis = photo.aiAnalysis;
+  if (!analysis) return `<span class="ai-photo-badge is-empty">AI 분석 전</span>`;
+  const label = aiQualityLabels[analysis.quality] || "보통";
+  return `
+    <div class="ai-photo-result is-${analysis.quality}">
+      <strong>${Math.round(analysis.score)}점</strong>
+      <span>${aiStars(analysis.score)} / ${label}</span>
+      <small>흔들림 ${Math.round(analysis.blur)} · 선명도 ${Math.round(analysis.sharpness)} · 밝기 ${Math.round(analysis.brightness)} · 노이즈 ${Math.round(analysis.noise)}</small>
+    </div>`;
+}
+
 function renderRating(photo) {
   const rating = Number(photo.rating || 3);
   return [1, 2, 3, 4, 5].map(value => {
@@ -1749,7 +1793,7 @@ function renderList() {
           <strong>${realIndex + 1}. ${escapeHtml(photo.file.name)}</strong>
           <span>${resolution}</span>
           <span>${formatBytes(photo.file.size)}</span>
-          ${photo.aiScore ? `<span>AI ${Math.round(photo.aiScore)}\uc810 / ${photo.aiExcluded ? "\uc81c\uc678" : photo.recommended ? "\ucd94\ucc9c" : "\ubcf4\ub958"}</span>` : ""}
+          ${renderAiPhotoBadge(photo)}
           ${renderPhotoEffectControl(photo)}
           <div class="tag-list">${renderPhotoTags(photo)}</div>
           <div class="tag-controls">${renderTagButtons(photo)}</div>
@@ -1797,6 +1841,7 @@ function renderPreview() {
       <strong>${escapeHtml(activePhoto.file.name)}</strong>
       <span>${activeIndex + 1} / ${photos.length} - ${resolution} - ${formatBytes(activePhoto.file.size)}</span>
       <span>\uc0ac\uc9c4 \ud6a8\uacfc: ${effectLabel}</span>
+      ${renderAiPhotoBadge(activePhoto)}
       <div class="tag-list">${renderPhotoTags(activePhoto)}</div>
       <label>\uc0ac\uc9c4 \ud6a8\uacfc
         <select data-action="property-photo-effect" data-id="${escapeHtml(activePhoto.id)}">
@@ -1974,6 +2019,7 @@ async function addFiles(fileList) {
       aiScore: 0,
       aiExcluded: false,
       aiReasons: [],
+      aiAnalysis: null,
       storyRole: "",
       transitionAfter: createTransition(defaultTransition, 0.5)
     };
@@ -2047,7 +2093,7 @@ async function analyzePhotoPixels(photo) {
   return new Promise(resolve => {
     const image = new Image();
     image.onload = () => {
-      const size = 48;
+      const size = 96;
       const canvas = document.createElement("canvas");
       canvas.width = size;
       canvas.height = size;
@@ -2056,7 +2102,8 @@ async function analyzePhotoPixels(photo) {
       const data = ctx.getImageData(0, 0, size, size).data;
       let brightness = 0;
       let colorfulness = 0;
-      let sharpness = 0;
+      let edgeEnergy = 0;
+      let noiseEnergy = 0;
       const gray = [];
       for (let index = 0; index < data.length; index += 4) {
         const r = data[index];
@@ -2070,17 +2117,60 @@ async function analyzePhotoPixels(photo) {
       for (let y = 1; y < size - 1; y += 1) {
         for (let x = 1; x < size - 1; x += 1) {
           const i = y * size + x;
-          sharpness += Math.abs(gray[i] - gray[i - 1]) + Math.abs(gray[i] - gray[i - size]);
+          const laplacian = Math.abs((gray[i] * 4) - gray[i - 1] - gray[i + 1] - gray[i - size] - gray[i + size]);
+          edgeEnergy += laplacian;
+          const localMean = (gray[i - 1] + gray[i + 1] + gray[i - size] + gray[i + size]) / 4;
+          noiseEnergy += Math.abs(gray[i] - localMean);
         }
       }
       const count = size * size;
+      const brightnessScore = Math.max(0, Math.min(100, (brightness / count / 255) * 100));
+      const sharpnessScore = Math.max(0, Math.min(100, (edgeEnergy / count) * 2.2));
+      const blurScore = Math.max(0, Math.min(100, sharpnessScore));
+      const noiseScore = Math.max(0, Math.min(100, 100 - ((noiseEnergy / count) * 3)));
+      const resolutionScore = Math.max(0, Math.min(100, Math.sqrt((photo.width || image.naturalWidth || 0) * (photo.height || image.naturalHeight || 0)) / 18));
+      const exposureScore = Math.max(0, 100 - Math.abs(brightnessScore - 58) * 1.45);
+      const score = Math.max(0, Math.min(100, Math.round(
+        sharpnessScore * 0.32
+        + blurScore * 0.2
+        + exposureScore * 0.24
+        + noiseScore * 0.12
+        + resolutionScore * 0.12
+      )));
+      const analysis = {
+        blur: Math.round(blurScore),
+        sharpness: Math.round(sharpnessScore),
+        brightness: Math.round(brightnessScore),
+        noise: Math.round(noiseScore),
+        orientation: (photo.height || image.naturalHeight) > (photo.width || image.naturalWidth) ? "Portrait" : "Landscape",
+        width: photo.width || image.naturalWidth || 0,
+        height: photo.height || image.naturalHeight || 0,
+        fileSize: photo.file?.size || photo.fileSize || 0,
+        capturedAt: photo.file?.lastModified ? new Date(photo.file.lastModified).toISOString() : "",
+        score,
+        analyzedAt: new Date().toISOString()
+      };
+      analysis.quality = aiQualityFromScore(score, analysis);
       resolve({
-        brightness: brightness / count,
-        colorfulness: colorfulness / count,
-        sharpness: sharpness / count
+        ...analysis,
+        colorfulness: colorfulness / count
       });
     };
-    image.onerror = () => resolve({ brightness: 70, colorfulness: 20, sharpness: 25 });
+    image.onerror = () => resolve({
+      blur: 0,
+      sharpness: 0,
+      brightness: 0,
+      noise: 0,
+      orientation: photo.height > photo.width ? "Portrait" : "Landscape",
+      width: photo.width || 0,
+      height: photo.height || 0,
+      fileSize: photo.file?.size || photo.fileSize || 0,
+      capturedAt: photo.file?.lastModified ? new Date(photo.file.lastModified).toISOString() : "",
+      score: 0,
+      quality: "excluded",
+      analyzedAt: new Date().toISOString(),
+      colorfulness: 0
+    });
     image.src = getPhotoUrl(photo);
   });
 }
@@ -2132,6 +2222,55 @@ function applyAiAnalysisToPhotos(analysis = []) {
       recommended: photo.locked || result.recommended
     };
   });
+}
+
+function updateAiAnalyzeProgress(done = 0, total = photos.length, text = "") {
+  if (!aiAnalyzeStatus || !aiAnalyzeProgressBar) return;
+  const percent = total ? Math.round((done / total) * 100) : 0;
+  aiAnalyzeStatus.textContent = text || (total ? `${done} / ${total}` : "AI 분석 대기");
+  aiAnalyzeProgressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+}
+
+async function runAiPhotoAnalysis() {
+  if (!photos.length || aiAnalyzeRunning) return;
+  aiAnalyzeRunning = true;
+  aiAnalyzeButton.disabled = true;
+  updateAiAnalyzeProgress(0, photos.length, `0 / ${photos.length} 분석중...`);
+  setMessage("로컬 PC에서 사진 AI 분석을 시작합니다. 외부 AI API는 사용하지 않습니다.");
+
+  for (let index = 0; index < photos.length; index += 1) {
+    const photo = photos[index];
+    updateAiAnalyzeProgress(index, photos.length, `${index + 1} / ${photos.length} 분석중...`);
+    const analysis = await analyzePhotoPixels(photo);
+    photo.aiAnalysis = analysis;
+    photo.aiScore = analysis.score;
+    photo.aiExcluded = analysis.quality === "excluded";
+    photo.recommended = photo.locked || analysis.quality === "recommended";
+    photo.aiReasons = [
+      `흔들림 ${analysis.blur}`,
+      `선명도 ${analysis.sharpness}`,
+      `밝기 ${analysis.brightness}`,
+      `노이즈 ${analysis.noise}`,
+      analysis.orientation
+    ];
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  aiAnalyzeRunning = false;
+  aiAnalyzeButton.disabled = false;
+  updateAiAnalyzeProgress(photos.length, photos.length, `${photos.length} / ${photos.length} 분석 완료`);
+  renderList();
+  renderAiAnalysis(photos.map(photo => ({
+    id: photo.id,
+    fileName: photo.file?.name || photo.fileName,
+    score: photo.aiScore || 0,
+    recommended: photo.recommended,
+    excluded: photo.aiExcluded,
+    reasons: photo.aiReasons || [],
+    excludeReasons: photo.aiExcluded ? ["제외 추천"] : []
+  })));
+  autosaveProject();
+  setMessage("AI 사진 분석을 완료했습니다. 결과는 프로젝트 저장 파일에 포함됩니다.");
 }
 
 function applyStoryboard(storyboard) {
@@ -2600,6 +2739,11 @@ storyboardList.addEventListener("drop", event => {
   if (card) movePhotoTo(draggedStoryboardPhotoId, card.dataset.id);
 });
 
+if (aiAnalyzeButton) aiAnalyzeButton.addEventListener("click", runAiPhotoAnalysis);
+if (aiPhotoFilter) aiPhotoFilter.addEventListener("change", () => {
+  activeAiPhotoFilter = aiPhotoFilter.value;
+  renderList();
+});
 aiAutoEditButton.addEventListener("click", runAiAutoEdit);
 aiRecommendButton.addEventListener("click", applyAiRecommendation);
 
