@@ -13,6 +13,8 @@ const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const UPLOAD_DIR = path.resolve(process.env.HIGHLIGHT_UPLOAD_DIR || path.join(ROOT_DIR, "uploads"));
 const OUTPUT_DIR = path.resolve(process.env.HIGHLIGHT_OUTPUT_DIR || path.join(ROOT_DIR, "outputs"));
+const DATA_DIR = path.resolve(process.env.HIGHLIGHT_DATA_DIR || path.join(ROOT_DIR, "data"));
+const USER_TEMPLATES_PATH = path.join(DATA_DIR, "templates.json");
 const MAX_PHOTOS = Number(process.env.HIGHLIGHT_MAX_PHOTOS || 100);
 const PHOTO_SECONDS = Number(process.env.HIGHLIGHT_PHOTO_SECONDS || 2);
 const SUPPORTED_RENDER_TRANSITIONS = new Set(["none", "fade", "crossfade"]);
@@ -23,6 +25,98 @@ const RENDER_ENCODERS = {
   qsv: { value: "qsv", label: "Intel Quick Sync", codec: "h264_qsv", vendor: "Intel" },
   amf: { value: "amf", label: "AMD AMF", codec: "h264_amf", vendor: "AMD" }
 };
+const DEFAULT_TEMPLATES = [
+  {
+    id: "default-basic",
+    name: "기본 템플릿",
+    category: "basic",
+    builtIn: true,
+    description: "가장 안정적인 기본 구성입니다.",
+    settings: {
+      template: "clean",
+      captionStyle: "shadow",
+      defaultTransition: "fade",
+      photoEffect: "none",
+      music: { mood: "none", name: "" },
+      outputOptions: { resolution: { mode: "1080x1920", width: 1080, height: 1920 }, fps: 30, quality: "standard", encoder: "auto" }
+    }
+  },
+  {
+    id: "default-emotional",
+    name: "감동형",
+    category: "emotional",
+    builtIn: true,
+    description: "부드러운 전환과 그림자 자막으로 성장 기록에 어울립니다.",
+    settings: {
+      template: "ceremony",
+      captionStyle: "shadow",
+      defaultTransition: "crossfade",
+      photoEffect: "slowZoomIn",
+      music: { mood: "warm", name: "감동형 BGM 권장" },
+      outputOptions: { resolution: { mode: "1080x1920", width: 1080, height: 1920 }, fps: 30, quality: "high", encoder: "auto" }
+    }
+  },
+  {
+    id: "default-sports",
+    name: "스포츠형",
+    category: "sports",
+    builtIn: true,
+    description: "빠른 리듬과 역동적인 사진 효과 중심입니다.",
+    settings: {
+      template: "dynamic",
+      captionStyle: "bold",
+      defaultTransition: "flash",
+      photoEffect: "dynamicZoom",
+      music: { mood: "active", name: "스포츠형 BGM 권장" },
+      outputOptions: { resolution: { mode: "1080x1920", width: 1080, height: 1920 }, fps: 60, quality: "high", encoder: "auto" }
+    }
+  },
+  {
+    id: "default-competition",
+    name: "대회형",
+    category: "competition",
+    builtIn: true,
+    description: "대회 하이라이트와 결과 기록에 맞춘 구성입니다.",
+    settings: {
+      template: "dynamic",
+      captionStyle: "bold",
+      defaultTransition: "zoomIn",
+      photoEffect: "slowZoomIn",
+      music: { mood: "epic", name: "대회형 BGM 권장" },
+      outputOptions: { resolution: { mode: "1920x1080", width: 1920, height: 1080 }, fps: 30, quality: "best", encoder: "auto" }
+    }
+  },
+  {
+    id: "default-promotion",
+    name: "홍보형",
+    category: "promotion",
+    builtIn: true,
+    description: "도장 홍보 영상과 SNS 쇼츠에 맞춘 세로형 템플릿입니다.",
+    settings: {
+      template: "social",
+      captionStyle: "backdrop",
+      defaultTransition: "slideLeft",
+      photoEffect: "slowZoomIn",
+      music: { mood: "bright", name: "홍보형 BGM 권장" },
+      outputOptions: { resolution: { mode: "1080x1920", width: 1080, height: 1920 }, fps: 30, quality: "high", encoder: "auto" }
+    }
+  },
+  {
+    id: "default-graduation",
+    name: "졸업/승급형",
+    category: "graduation",
+    builtIn: true,
+    description: "승급식, 졸업식, 수료식에 어울리는 차분한 구성입니다.",
+    settings: {
+      template: "ceremony",
+      captionStyle: "shadow",
+      defaultTransition: "fade",
+      photoEffect: "slowZoomOut",
+      music: { mood: "ceremony", name: "졸업/승급형 BGM 권장" },
+      outputOptions: { resolution: { mode: "1080x1920", width: 1080, height: 1920 }, fps: 30, quality: "high", encoder: "auto" }
+    }
+  }
+];
 const renderJobs = new Map();
 const renderQueue = [];
 let activeRenderJobId = null;
@@ -30,6 +124,7 @@ let encoderDetectionCache = null;
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+fs.mkdirSync(DATA_DIR, { recursive: true });
 
 let ffmpegPath = "ffmpeg";
 try {
@@ -379,6 +474,44 @@ function safeOutputFileName(value) {
   const parsed = path.parse(String(value || "highlight-studio.mp4"));
   const base = safeName(parsed.name || "highlight-studio");
   return `${base}.mp4`;
+}
+
+function safeTemplateName(value) {
+  const name = String(value || "").trim().slice(0, 80);
+  if (!name) throw new Error("템플릿 이름을 입력해 주세요.");
+  return name;
+}
+
+function readUserTemplates() {
+  try {
+    const data = JSON.parse(fs.readFileSync(USER_TEMPLATES_PATH, "utf8"));
+    return Array.isArray(data.templates) ? data.templates : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function writeUserTemplates(templates) {
+  fs.writeFileSync(USER_TEMPLATES_PATH, JSON.stringify({ version: 1, templates }, null, 2), "utf8");
+}
+
+function sanitizeTemplatePayload(body = {}, existing = {}) {
+  const now = new Date().toISOString();
+  return {
+    id: existing.id || makeId("template"),
+    name: safeTemplateName(body.name || existing.name),
+    category: String(body.category || existing.category || "custom").slice(0, 40),
+    description: String(body.description || existing.description || "").slice(0, 240),
+    builtIn: false,
+    settings: body.settings && typeof body.settings === "object" ? body.settings : existing.settings || {},
+    createdAt: existing.createdAt || now,
+    updatedAt: now
+  };
+}
+
+function getAllTemplates() {
+  const userTemplates = readUserTemplates().map(template => ({ ...template, builtIn: false }));
+  return [...DEFAULT_TEMPLATES, ...userTemplates];
 }
 
 function uniqueOutputPath(fileName) {
@@ -937,6 +1070,51 @@ app.post("/api/ai/create-storyboard", (req, res) => {
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message || "스토리보드 생성에 실패했습니다." });
   }
+});
+
+app.get("/api/templates", (_req, res) => {
+  res.json({ ok: true, templates: getAllTemplates() });
+});
+
+app.post("/api/templates", (req, res) => {
+  try {
+    const templates = readUserTemplates();
+    const template = sanitizeTemplatePayload(req.body);
+    templates.push(template);
+    writeUserTemplates(templates);
+    res.status(201).json({ ok: true, template });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message || "템플릿을 저장하지 못했습니다." });
+  }
+});
+
+app.put("/api/templates/:templateId", (req, res) => {
+  try {
+    const templateId = req.params.templateId;
+    if (DEFAULT_TEMPLATES.some(template => template.id === templateId)) {
+      return res.status(403).json({ ok: false, error: "기본 템플릿은 수정할 수 없습니다." });
+    }
+    const templates = readUserTemplates();
+    const index = templates.findIndex(template => template.id === templateId);
+    if (index < 0) return res.status(404).json({ ok: false, error: "수정할 템플릿을 찾을 수 없습니다." });
+    templates[index] = sanitizeTemplatePayload(req.body, templates[index]);
+    writeUserTemplates(templates);
+    res.json({ ok: true, template: templates[index] });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message || "템플릿을 수정하지 못했습니다." });
+  }
+});
+
+app.delete("/api/templates/:templateId", (req, res) => {
+  const templateId = req.params.templateId;
+  if (DEFAULT_TEMPLATES.some(template => template.id === templateId)) {
+    return res.status(403).json({ ok: false, error: "기본 템플릿은 삭제할 수 없습니다." });
+  }
+  const templates = readUserTemplates();
+  const nextTemplates = templates.filter(template => template.id !== templateId);
+  if (nextTemplates.length === templates.length) return res.status(404).json({ ok: false, error: "삭제할 템플릿을 찾을 수 없습니다." });
+  writeUserTemplates(nextTemplates);
+  res.json({ ok: true, templateId });
 });
 
 app.post("/api/auth/login", (req, res) => {

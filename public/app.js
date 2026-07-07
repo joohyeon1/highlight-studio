@@ -37,6 +37,13 @@ const titleInput = document.getElementById("titleInput");
 const templateInput = document.getElementById("templateInput");
 const bgmInput = document.getElementById("bgmInput");
 const bgmName = document.getElementById("bgmName");
+const templateNameInput = document.getElementById("templateNameInput");
+const templateCategoryInput = document.getElementById("templateCategoryInput");
+const templateDescriptionInput = document.getElementById("templateDescriptionInput");
+const saveTemplateButton = document.getElementById("saveTemplateButton");
+const updateTemplateButton = document.getElementById("updateTemplateButton");
+const templateSummary = document.getElementById("templateSummary");
+const templateList = document.getElementById("templateList");
 const openingCaptionInput = document.getElementById("openingCaptionInput");
 const endingCaptionInput = document.getElementById("endingCaptionInput");
 const newProjectButton = document.getElementById("newProjectButton");
@@ -102,6 +109,15 @@ const encoderLabels = {
   nvenc: "NVIDIA NVENC",
   qsv: "Intel Quick Sync",
   amf: "AMD AMF"
+};
+const templateCategoryLabels = {
+  basic: "\uae30\ubcf8",
+  emotional: "\uac10\ub3d9\ud615",
+  sports: "\uc2a4\ud3ec\uce20\ud615",
+  competition: "\ub300\ud68c\ud615",
+  promotion: "\ud64d\ubcf4\ud615",
+  graduation: "\uc878\uc5c5/\uc2b9\uae09\ud615",
+  custom: "\uc0ac\uc6a9\uc790 \uc815\uc758"
 };
 
 const photoEffectOptions = [
@@ -221,6 +237,8 @@ let activeRenderJobId = null;
 let renderPollTimer = null;
 let queuePollTimer = null;
 let latestOutputFile = null;
+let templates = [];
+let selectedTemplateId = "";
 
 const renderStatusLabels = {
   queued: "\ub300\uae30",
@@ -696,6 +714,75 @@ function getOutputOptions() {
   };
 }
 
+function createTemplateSettings() {
+  const commonPhotoEffect = photos[0]?.photoEffect || "none";
+  const commonCaption = photos[0]?.caption ? normalizeCaption(photos[0].caption) : createCaption();
+  const commonTransition = photos.find(photo => photo.transitionAfter)?.transitionAfter || createTransition(defaultTransitionInput.value || "fade", 0.5);
+  return {
+    template: templateInput.value,
+    title: titleInput.value,
+    secondsPerPhoto: getSecondsPerPhoto(),
+    captionStyle: commonCaption.style || "shadow",
+    captionPosition: commonCaption.position || "bottom",
+    captionTiming: commonCaption.timing || "full",
+    openingCaption: openingCaptionInput.value,
+    endingCaption: endingCaptionInput.value,
+    defaultTransition: defaultTransitionInput.value,
+    transitionAfter: createTransition(getTransitionType(commonTransition), getTransitionDuration(commonTransition)),
+    photoEffect: commonPhotoEffect,
+    music: bgmReference ? { name: bgmReference.name, type: bgmReference.type, size: bgmReference.size } : { name: "", type: "", size: 0 },
+    outputOptions: getOutputOptions()
+  };
+}
+
+function applyTemplateSettings(settings = {}) {
+  if (settings.template) templateInput.value = settings.template;
+  if (settings.title) titleInput.value = settings.title;
+  if (settings.secondsPerPhoto) secondsInput.value = String(settings.secondsPerPhoto);
+  if (settings.defaultTransition) defaultTransitionInput.value = settings.defaultTransition;
+  if (settings.openingCaption !== undefined) openingCaptionInput.value = settings.openingCaption;
+  if (settings.endingCaption !== undefined) endingCaptionInput.value = settings.endingCaption;
+  const outputOptions = settings.outputOptions || {};
+  if (outputOptions.resolution?.mode) outputResolutionInput.value = outputOptions.resolution.mode;
+  if (outputOptions.resolution?.width) customWidthInput.value = outputOptions.resolution.width;
+  if (outputOptions.resolution?.height) customHeightInput.value = outputOptions.resolution.height;
+  if (outputOptions.fps) outputFpsInput.value = String(outputOptions.fps);
+  if (outputOptions.quality) outputQualityInput.value = outputOptions.quality;
+  if (outputOptions.format) outputFormatInput.value = outputOptions.format;
+  if (outputOptions.encoder && renderEncoderInput) renderEncoderInput.value = outputOptions.encoder;
+
+  const photoEffect = settings.photoEffect || "none";
+  const transition = settings.transitionAfter || createTransition(settings.defaultTransition || "fade", 0.5);
+  photos = photos.map((photo, index) => {
+    const caption = normalizeCaption(photo.caption);
+    return {
+      ...photo,
+      photoEffect,
+      caption: {
+        ...caption,
+        style: settings.captionStyle || caption.style,
+        position: settings.captionPosition || caption.position,
+        timing: settings.captionTiming || caption.timing
+      },
+      transitionAfter: index === photos.length - 1 ? null : createTransition(getTransitionType(transition), getTransitionDuration(transition))
+    };
+  });
+
+  bgmReference = settings.music?.name ? {
+    name: settings.music.name,
+    type: settings.music.type || "audio/reference",
+    size: Number(settings.music.size || 0),
+    lastModified: null,
+    referenceOnly: true
+  } : null;
+  bgmName.textContent = bgmReference ? `BGM: ${bgmReference.name}` : "\uc120\ud0dd\ub41c BGM \uc5c6\uc74c";
+  outputFileNameTouched = Boolean(outputOptions.fileName);
+  if (outputOptions.fileName) outputFileNameInput.value = outputOptions.fileName;
+  if (outputOptions.directory) outputDirectoryInput.value = outputOptions.directory;
+  renderList();
+  renderOutputEstimate();
+}
+
 function describeEncoder(value, codec = "") {
   const label = encoderLabels[value] || value || "CPU";
   return codec ? `${label} (${codec})` : label;
@@ -722,6 +809,138 @@ function getRenderablePhotos() {
   const selected = photos.filter(photo => selectedPhotoIds.size ? selectedPhotoIds.has(photo.id) : photo.selected);
   const target = selected.length ? selected : photos;
   return target.filter(photo => photo.file instanceof File);
+}
+
+function renderTemplates() {
+  if (!templateList || !templateSummary) return;
+  templateSummary.textContent = `${templates.length}\uac1c`;
+  if (!templates.length) {
+    templateList.innerHTML = `<p class="muted-text">\ud15c\ud50c\ub9bf \ubaa9\ub85d\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.</p>`;
+    return;
+  }
+  templateList.innerHTML = templates.map(template => {
+    const activeClass = selectedTemplateId === template.id ? " is-active" : "";
+    const categoryLabel = templateCategoryLabels[template.category] || template.category || "\uc0ac\uc6a9\uc790 \uc815\uc758";
+    const originLabel = template.builtIn ? "\uae30\ubcf8" : "\uc0ac\uc6a9\uc790";
+    return `
+      <article class="template-item${activeClass}" data-id="${escapeHtml(template.id)}">
+        <div>
+          <strong>${escapeHtml(template.name)}</strong>
+          <span>${escapeHtml(categoryLabel)} / ${originLabel}</span>
+          <p>${escapeHtml(template.description || "\uc124\uba85 \uc5c6\uc74c")}</p>
+        </div>
+        <div class="template-item-actions">
+          <button type="button" data-action="select-template" data-id="${escapeHtml(template.id)}">\uc120\ud0dd</button>
+          <button type="button" data-action="apply-template" data-id="${escapeHtml(template.id)}">\uc801\uc6a9</button>
+          <button type="button" data-action="delete-template" data-id="${escapeHtml(template.id)}" ${template.builtIn ? "disabled" : ""}>\uc0ad\uc81c</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+async function loadTemplates() {
+  try {
+    const response = await fetch("/api/templates");
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "\ud15c\ud50c\ub9bf \ubaa9\ub85d\uc744 \ubd88\ub7ec\uc624\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.");
+    templates = result.templates || [];
+    if (!selectedTemplateId && templates[0]) selectedTemplateId = templates[0].id;
+    renderTemplates();
+    fillTemplateForm(getSelectedTemplate());
+  } catch (error) {
+    if (templateList) templateList.innerHTML = `<p class="muted-text">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function getSelectedTemplate() {
+  return templates.find(template => template.id === selectedTemplateId);
+}
+
+function fillTemplateForm(template) {
+  if (!template || !templateNameInput) return;
+  templateNameInput.value = template.name || "";
+  templateCategoryInput.value = template.category || "custom";
+  templateDescriptionInput.value = template.description || "";
+  updateTemplateButton.disabled = Boolean(template.builtIn);
+}
+
+async function saveTemplate() {
+  try {
+    const response = await fetch("/api/templates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: templateNameInput.value,
+        category: templateCategoryInput.value,
+        description: templateDescriptionInput.value,
+        settings: createTemplateSettings()
+      })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "\ud15c\ud50c\ub9bf \uc800\uc7a5\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
+    selectedTemplateId = result.template.id;
+    setMessage("\ud604\uc7ac \ud3b8\uc9d1 \uc124\uc815\uc744 \ud15c\ud50c\ub9bf\uc73c\ub85c \uc800\uc7a5\ud588\uc2b5\ub2c8\ub2e4.");
+    await loadTemplates();
+  } catch (error) {
+    setMessage(error.message);
+  }
+}
+
+async function updateTemplate() {
+  const template = getSelectedTemplate();
+  if (!template || template.builtIn) {
+    setMessage("\uae30\ubcf8 \ud15c\ud50c\ub9bf\uc740 \uc218\uc815\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.");
+    return;
+  }
+  try {
+    const response = await fetch(`/api/templates/${encodeURIComponent(template.id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: templateNameInput.value,
+        category: templateCategoryInput.value,
+        description: templateDescriptionInput.value,
+        settings: createTemplateSettings()
+      })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "\ud15c\ud50c\ub9bf \uc218\uc815\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
+    setMessage("\uc120\ud0dd\ud55c \ud15c\ud50c\ub9bf\uc744 \uc218\uc815\ud588\uc2b5\ub2c8\ub2e4.");
+    await loadTemplates();
+  } catch (error) {
+    setMessage(error.message);
+  }
+}
+
+async function deleteTemplate(templateId) {
+  const template = templates.find(item => item.id === templateId);
+  if (!template || template.builtIn) {
+    setMessage("\uae30\ubcf8 \ud15c\ud50c\ub9bf\uc740 \uc0ad\uc81c\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.");
+    return;
+  }
+  if (!window.confirm(`"${template.name}" \ud15c\ud50c\ub9bf\uc744 \uc0ad\uc81c\ud560\uae4c\uc694?`)) return;
+  try {
+    const response = await fetch(`/api/templates/${encodeURIComponent(templateId)}`, { method: "DELETE" });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "\ud15c\ud50c\ub9bf \uc0ad\uc81c\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
+    selectedTemplateId = "";
+    setMessage("\ud15c\ud50c\ub9bf\uc744 \uc0ad\uc81c\ud588\uc2b5\ub2c8\ub2e4.");
+    await loadTemplates();
+  } catch (error) {
+    setMessage(error.message);
+  }
+}
+
+function applySelectedTemplate(templateId) {
+  const template = templates.find(item => item.id === templateId);
+  if (!template) return;
+  if (!window.confirm(`"${template.name}" \ud15c\ud50c\ub9bf\uc744 \ud604\uc7ac \ud504\ub85c\uc81d\ud2b8\uc5d0 \uc801\uc6a9\ud560\uae4c\uc694?`)) return;
+  selectedTemplateId = template.id;
+  applyTemplateSettings(template.settings || {});
+  fillTemplateForm(template);
+  renderTemplates();
+  setMessage(`"${template.name}" \ud15c\ud50c\ub9bf\uc744 \uc801\uc6a9\ud588\uc2b5\ub2c8\ub2e4.`);
 }
 
 function updateOutputFileName() {
@@ -2092,6 +2311,21 @@ dropZone.addEventListener("drop", event => {
   addFiles(event.dataTransfer.files);
 });
 
+saveTemplateButton.addEventListener("click", saveTemplate);
+updateTemplateButton.addEventListener("click", updateTemplate);
+templateList.addEventListener("click", event => {
+  const target = event.target.closest("[data-action]");
+  if (!target) return;
+  const templateId = target.dataset.id;
+  if (target.dataset.action === "select-template") {
+    selectedTemplateId = templateId;
+    fillTemplateForm(getSelectedTemplate());
+    renderTemplates();
+  }
+  if (target.dataset.action === "apply-template") applySelectedTemplate(templateId);
+  if (target.dataset.action === "delete-template") deleteTemplate(templateId);
+});
+
 photoList.addEventListener("click", event => {
   const target = event.target.closest("[data-action]");
   if (!target) return;
@@ -2456,6 +2690,7 @@ renderList();
 renderAuthState();
 loadLicenseStatus().catch(error => { authMessage.textContent = error.message; });
 checkForUpdates();
+loadTemplates();
 loadRenderEncoders();
 loadOutputs();
 loadRenderQueue();

@@ -190,6 +190,46 @@
       </div>
     </section>
 
+    <section class="panel template-manager-panel">
+      <div class="panel-head">
+        <div>
+          <h2>&#53596;&#54540;&#47551; &#44288;&#47532;</h2>
+          <p>&#54788;&#51116; &#54200;&#51665; &#49444;&#51221;&#51012; &#53596;&#54540;&#47551;&#51004;&#47196; &#51200;&#51109;&#54616;&#44256;, &#54596;&#50836;&#54624; &#46412; &#48736;&#47476;&#44172; &#51201;&#50857;&#54633;&#45768;&#45796;.</p>
+        </div>
+      </div>
+      <div class="template-manager-grid">
+        <div class="template-save-card">
+          <label>&#53596;&#54540;&#47551; &#51060;&#47492;
+            <input id="templateNameInput" type="text" maxlength="80" placeholder="&#50696; &#50668;&#47492;&#52896;&#54532; &#54861;&#48372;&#54805;">
+          </label>
+          <label>&#48516;&#47448;
+            <select id="templateCategoryInput">
+              <option value="custom">&#49324;&#50857;&#51088; &#51221;&#51032;</option>
+              <option value="emotional">&#44048;&#46041;&#54805;</option>
+              <option value="sports">&#49828;&#54252;&#52768;&#54805;</option>
+              <option value="competition">&#45824;&#54924;&#54805;</option>
+              <option value="promotion">&#54861;&#48372;&#54805;</option>
+              <option value="graduation">&#51320;&#50629;/&#49849;&#44553;&#54805;</option>
+            </select>
+          </label>
+          <label>&#49444;&#47749;
+            <textarea id="templateDescriptionInput" rows="3" maxlength="240" placeholder="&#53596;&#54540;&#47551; &#50857;&#46020;&#47484; &#47700;&#47784;&#54616;&#49464;&#50836;."></textarea>
+          </label>
+          <div class="template-actions">
+            <button id="saveTemplateButton" class="primary-button" type="button">&#54788;&#51116; &#49444;&#51221; &#51200;&#51109;</button>
+            <button id="updateTemplateButton" class="secondary-button" type="button" disabled>&#49440;&#53469; &#53596;&#54540;&#47551; &#49688;&#51221;</button>
+          </div>
+        </div>
+        <div class="template-list-card">
+          <div class="template-list-head">
+            <strong>&#53596;&#54540;&#47551; &#47785;&#47197;</strong>
+            <span id="templateSummary">0&#44060;</span>
+          </div>
+          <div id="templateList" class="template-list"></div>
+        </div>
+      </div>
+    </section>
+
     <section class="panel output-panel">
       <div class="panel-head">
         <div>
