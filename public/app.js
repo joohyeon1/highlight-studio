@@ -13,6 +13,7 @@ const aiAnalyzeButton = document.getElementById("aiAnalyzeButton");
 const aiDuplicateButton = document.getElementById("aiDuplicateButton");
 const selectExcludedButton = document.getElementById("selectExcludedButton");
 const aiOneClickButton = document.getElementById("aiOneClickButton");
+const oneClickTemplateInput = document.getElementById("oneClickTemplateInput");
 const oneClickToneInput = document.getElementById("oneClickToneInput");
 const oneClickLengthInput = document.getElementById("oneClickLengthInput");
 const oneClickExcludeInput = document.getElementById("oneClickExcludeInput");
@@ -141,6 +142,106 @@ const templateCategoryLabels = {
   custom: "\uc0ac\uc6a9\uc790 \uc815\uc758"
 };
 
+const templatePresetVersion = 1;
+const aiTemplatePresets = [
+  {
+    id: "taekwondo-class",
+    name: "\ud0dc\uad8c\ub3c4 \uc218\uc5c5",
+    mood: "\ud65c\uae30\ucc2c \uc218\uc5c5 \ubd84\uc704\uae30",
+    defaultCaption: "\uc624\ub298\ub3c4 \ud55c \uac78\uc74c \uc131\uc7a5\ud588\uc5b4\uc694!",
+    defaultTransition: "fade",
+    defaultDuration: 3.5,
+    introText: "\uc624\ub298\uc758 \ud0dc\uad8c\ub3c4 \uc218\uc5c5 \ud558\uc774\ub77c\uc774\ud2b8",
+    endingText: "\uba4b\uc9c4 \uc131\uc7a5, \ub2e4\uc74c \uc2dc\uac04\uc5d0\ub3c4 \uacc4\uc18d\ub429\ub2c8\ub2e4!",
+    recommendedRatio: "16:9",
+    defaultEffect: "kenburns"
+  },
+  {
+    id: "demo-team",
+    name: "\uc2dc\ubc94\ub2e8",
+    mood: "\uc808\ub3c4 \uc788\ub294 \uc2dc\ubc94 \ubd84\uc704\uae30",
+    defaultCaption: "\ud558\ub098\ub41c \ub9c8\uc74c\uc73c\ub85c \ub354 \uac15\ud558\uac8c",
+    defaultTransition: "flash",
+    defaultDuration: 3,
+    introText: "\uc2dc\ubc94\ub2e8\uc758 \uba4b\uc9c4 \uc21c\uac04",
+    endingText: "\uba4b\uc9c4 \uc2dc\ubc94\uc5d0 \ud070 \ubc15\uc218\ub97c \ubcf4\ub0c5\ub2c8\ub2e4!",
+    recommendedRatio: "16:9",
+    defaultEffect: "dynamicZoom"
+  },
+  {
+    id: "kids-physical",
+    name: "\uc720\uc544\uccb4\uc721",
+    mood: "\ubc1d\uace0 \uc2e0\ub098\ub294 \uc720\uc544\uccb4\uc721 \ubd84\uc704\uae30",
+    defaultCaption: "\uc6c3\uc74c\uacfc \ud65c\uae30\uac00 \uac00\ub4dd\ud55c \uc2dc\uac04",
+    defaultTransition: "crossfade",
+    defaultDuration: 3,
+    introText: "\uc544\uc774\ub4e4\uc758 \uc990\uac70\uc6b4 \uc6c0\uc9c1\uc784",
+    endingText: "\ub2e4\uc74c \uc2dc\uac04\uc774 \ub354 \uae30\ub300\ub429\ub2c8\ub2e4!",
+    recommendedRatio: "9:16",
+    defaultEffect: "bright"
+  },
+  {
+    id: "promotion-test",
+    name: "\uc2b9\uae09\uc2ec\uc0ac",
+    mood: "\uc9c4\uc9c0\ud558\uace0 \uac10\ub3d9\uc801\uc778 \uc131\uc7a5 \ubd84\uc704\uae30",
+    defaultCaption: "\ub178\ub825\uc774 \ub9cc\ub4e0 \uc790\uc2e0\uac10",
+    defaultTransition: "fade",
+    defaultDuration: 4,
+    introText: "\uc2b9\uae09\uc2ec\uc0ac \ud558\uc774\ub77c\uc774\ud2b8",
+    endingText: "\uc624\ub298\uc758 \ub178\ub825\uc774 \uba4b\uc9c4 \uc131\uc7a5\uc774 \ub418\uc5c8\uc2b5\ub2c8\ub2e4.",
+    recommendedRatio: "16:9",
+    defaultEffect: "slowZoomIn"
+  },
+  {
+    id: "competition-event",
+    name: "\ub300\ud68c/\ud589\uc0ac",
+    mood: "\uc5ed\ub3d9\uc801\uc778 \ub300\ud68c\uc640 \ud589\uc0ac \ubd84\uc704\uae30",
+    defaultCaption: "\ube5b\ub098\ub294 \ub3c4\uc804\uc758 \uc21c\uac04",
+    defaultTransition: "zoomIn",
+    defaultDuration: 3,
+    introText: "\ub300\ud68c\uc640 \ud589\uc0ac\uc758 \ud558\uc774\ub77c\uc774\ud2b8",
+    endingText: "\ubaa8\ub450\uc758 \ub3c4\uc804\uc5d0 \ud070 \ubc15\uc218\ub97c \ubcf4\ub0c5\ub2c8\ub2e4!",
+    recommendedRatio: "16:9",
+    defaultEffect: "dynamicZoom"
+  },
+  {
+    id: "birthday-celebration",
+    name: "\uc0dd\uc77c/\ucd95\ud558",
+    mood: "\ub530\ub73b\ud558\uace0 \uc990\uac70\uc6b4 \ucd95\ud558 \ubd84\uc704\uae30",
+    defaultCaption: "\uc624\ub298\uc758 \ud2b9\ubcc4\ud55c \uc21c\uac04\uc744 \ucd95\ud558\ud574\uc694!",
+    defaultTransition: "crossfade",
+    defaultDuration: 3.5,
+    introText: "\ud2b9\ubcc4\ud55c \ub0a0\uc758 \ud589\ubcf5\ud55c \uc21c\uac04",
+    endingText: "\ud568\uaed8 \ucd95\ud558\ud574 \uc8fc\uc154\uc11c \uac10\uc0ac\ud569\ub2c8\ub2e4!",
+    recommendedRatio: "1:1",
+    defaultEffect: "slowZoomIn"
+  },
+  {
+    id: "graduation-completion",
+    name: "\uc878\uc5c5/\uc218\ub8cc",
+    mood: "\uac10\ub3d9\uc801\uc778 \ub9c8\ubb34\ub9ac\uc640 \uc131\uc7a5 \ubd84\uc704\uae30",
+    defaultCaption: "\ud568\uaed8\ud55c \uc2dc\uac04\uc774 \uba4b\uc9c4 \uae30\uc5b5\uc774 \ub429\ub2c8\ub2e4.",
+    defaultTransition: "fade",
+    defaultDuration: 4,
+    introText: "\uc878\uc5c5\uacfc \uc218\ub8cc\uc758 \uc18c\uc911\ud55c \uae30\uc5b5",
+    endingText: "\uc0c8\ub85c\uc6b4 \uc2dc\uc791\uc744 \uc751\uc6d0\ud569\ub2c8\ub2e4.",
+    recommendedRatio: "16:9",
+    defaultEffect: "slowZoomOut"
+  },
+  {
+    id: "travel-vlog",
+    name: "\uc5ec\ud589/\ube0c\uc774\ub85c\uadf8",
+    mood: "\uc790\uc5f0\uc2a4\ub7fd\uace0 \uacbd\ucf8c\ud55c \uae30\ub85d \ubd84\uc704\uae30",
+    defaultCaption: "\uc624\ub298\uc758 \uae30\uc5b5\uc744 \ud558\ub098\uc758 \uc601\uc0c1\uc73c\ub85c",
+    defaultTransition: "slideLeft",
+    defaultDuration: 3,
+    introText: "\uc6b0\ub9ac\uc758 \uc5ec\ud589 \ud558\uc774\ub77c\uc774\ud2b8",
+    endingText: "\ub2e4\uc74c \uc5ec\uc815\ub3c4 \ud568\uaed8\ud574\uc694!",
+    recommendedRatio: "9:16",
+    defaultEffect: "panRight"
+  }
+];
+
 const photoEffectOptions = [
   { value: "none", label: "\uc5c6\uc74c" },
   { value: "slowZoomIn", label: "\ucc9c\ucc9c\ud788 \ud655\ub300" },
@@ -253,6 +354,8 @@ let captionGeneratedAt = "";
 let aiOneClickGenerated = false;
 let aiOneClickOptions = null;
 let aiOneClickGeneratedAt = "";
+let selectedTemplate = "taekwondo-class";
+let templateAppliedAt = "";
 let aiAnalyzeRunning = false;
 let timelineZoom = 100;
 let activeTransitionPhotoId = null;
@@ -1159,6 +1262,10 @@ function createProjectData() {
       aiOneClickGenerated,
       aiOneClickOptions,
       aiOneClickGeneratedAt,
+      selectedTemplate,
+      templatePresetVersion,
+      templateAppliedAt,
+      outputRatio: getAiTemplatePreset(selectedTemplate).recommendedRatio,
       bgm: bgmReference,
       outputOptions: getOutputOptions()
     },
@@ -1168,6 +1275,10 @@ function createProjectData() {
       aiOneClickGenerated,
       aiOneClickOptions,
       generatedAt: aiOneClickGeneratedAt,
+      selectedTemplate,
+      templatePresetVersion,
+      templateAppliedAt,
+      outputRatio: getAiTemplatePreset(selectedTemplate).recommendedRatio,
       captionTone,
       captionGeneratedAt,
       scenes: photos.map((photo, index) => ({
@@ -1214,7 +1325,10 @@ function restoreProjectData(data) {
   aiOneClickGenerated = Boolean(data.video?.aiOneClickGenerated || data.storyboard?.aiOneClickGenerated);
   aiOneClickOptions = data.video?.aiOneClickOptions || data.storyboard?.aiOneClickOptions || null;
   aiOneClickGeneratedAt = data.video?.aiOneClickGeneratedAt || data.storyboard?.generatedAt || "";
+  selectedTemplate = getAiTemplatePreset(data.video?.selectedTemplate || data.storyboard?.selectedTemplate || aiOneClickOptions?.templateId || "taekwondo-class").id;
+  templateAppliedAt = data.video?.templateAppliedAt || data.storyboard?.templateAppliedAt || "";
   if (captionToneInput) captionToneInput.value = captionTone;
+  if (oneClickTemplateInput) oneClickTemplateInput.value = selectedTemplate;
   if (oneClickToneInput) oneClickToneInput.value = aiOneClickOptions?.tone || captionTone || "emotional";
   if (oneClickLengthInput) oneClickLengthInput.value = aiOneClickOptions?.length || "normal";
   if (oneClickExcludeInput) oneClickExcludeInput.checked = aiOneClickOptions?.excludeRecommended !== false;
@@ -1604,9 +1718,12 @@ function newProject() {
   aiOneClickGenerated = false;
   aiOneClickOptions = null;
   aiOneClickGeneratedAt = "";
+  selectedTemplate = "taekwondo-class";
+  templateAppliedAt = "";
   if (captionEventInput) captionEventInput.value = "";
   if (captionDojangInput) captionDojangInput.value = "";
   if (captionToneInput) captionToneInput.value = captionTone;
+  if (oneClickTemplateInput) oneClickTemplateInput.value = selectedTemplate;
   if (oneClickToneInput) oneClickToneInput.value = captionTone;
   if (oneClickLengthInput) oneClickLengthInput.value = "normal";
   if (oneClickExcludeInput) oneClickExcludeInput.checked = true;
@@ -2638,6 +2755,26 @@ function getPhotoCapturedTime(photo) {
   return Number.isFinite(time) ? time : 0;
 }
 
+function getAiTemplatePreset(templateId = selectedTemplate) {
+  return aiTemplatePresets.find(preset => preset.id === templateId) || aiTemplatePresets[0];
+}
+
+function normalizePresetEffect(effect = "kenburns") {
+  if (effect === "kenburns") return "slowZoomIn";
+  return photoEffectOptions.some(option => option.value === effect) ? effect : "slowZoomIn";
+}
+
+function applyPresetOutputRatio(preset) {
+  const ratioMap = {
+    "16:9": "1920x1080",
+    "9:16": "1080x1920",
+    "1:1": "1080x1080"
+  };
+  const resolution = ratioMap[preset?.recommendedRatio] || "1920x1080";
+  if (outputResolutionInput) outputResolutionInput.value = resolution;
+  renderOutputEstimate();
+}
+
 function isAiStoryboardEligible(photo, options = {}) {
   if (options.excludeRecommended !== false && (photo.excludeRecommended || photo.aiQuality?.excludeRecommended || photo.aiQuality?.grade === "exclude")) return false;
   if (options.representativeOnly !== false && photo.aiDuplicate?.isDuplicateCandidate && !photo.representative) return false;
@@ -2645,6 +2782,7 @@ function isAiStoryboardEligible(photo, options = {}) {
 }
 
 function createLocalAiStoryboard(options = {}) {
+  const preset = getAiTemplatePreset(options.templateId || selectedTemplate);
   const lengthLimits = { short: 8, normal: 16, long: Infinity };
   const maxScenes = lengthLimits[options.length || "normal"] || lengthLimits.normal;
   const eligible = photos
@@ -2678,27 +2816,30 @@ function createLocalAiStoryboard(options = {}) {
   const generatedAt = new Date().toISOString();
   return {
     source: "local-rule-ai",
+    templateId: preset.id,
+    templatePresetVersion,
     generatedAt,
     selectedPhotoIds: ordered.map(item => item.photo.id),
     excludedPhotoIds: photos.filter(photo => !ordered.some(item => item.photo.id === photo.id)).map(photo => photo.id),
     scenes: [
       {
         type: "opening",
-        caption: openingCaptionInput.value || "\ud0dc\uad8c\ub3c4 \ud558\uc774\ub77c\uc774\ud2b8"
+        caption: preset.introText || openingCaptionInput.value || "\ud0dc\uad8c\ub3c4 \ud558\uc774\ub77c\uc774\ud2b8"
       },
       ...ordered.map((item, index) => ({
         type: index < intro.length ? "intro" : index === ordered.length - 1 ? "ending" : "main",
         photoId: item.photo.id,
-        duration: 3,
-        transitionAfter: createTransition(index % 3 === 1 ? "crossfade" : "fade", 0.5),
-        photoEffect: index % 2 === 0 ? "slowZoomIn" : "slowZoomOut",
-        caption: "",
+        duration: Number(preset.defaultDuration || 3),
+        transitionAfter: createTransition(preset.defaultTransition || "fade", 0.5),
+        photoEffect: normalizePresetEffect(preset.defaultEffect),
+        caption: preset.defaultCaption || "",
+        templateId: preset.id,
         sceneSource: "ai",
         score: Math.round(item.score)
       })),
       {
         type: "ending",
-        caption: endingCaptionInput.value || "\ud568\uaed8\ud55c \uc21c\uac04\uc744 \uae30\uc5b5\ud569\ub2c8\ub2e4"
+        caption: preset.endingText || endingCaptionInput.value || "\ud568\uaed8\ud55c \uc21c\uac04\uc744 \uae30\uc5b5\ud569\ub2c8\ub2e4"
       }
     ]
   };
@@ -2903,7 +3044,9 @@ function applyAiCaptionsForOneClick(toneValue = "emotional") {
 }
 
 function getOneClickOptions() {
+  const templateId = oneClickTemplateInput?.value || selectedTemplate || "taekwondo-class";
   return {
+    templateId,
     tone: oneClickToneInput?.value || captionToneInput?.value || "emotional",
     length: oneClickLengthInput?.value || "normal",
     excludeRecommended: oneClickExcludeInput?.checked !== false,
@@ -2927,6 +3070,7 @@ async function runAiOneClickProduction() {
   if (hasExistingTimeline && !window.confirm("\uae30\uc874 \ud0c0\uc784\ub77c\uc778\uc744 AI \uc6d0\ud074\ub9ad \uc81c\uc791 \uacb0\uacfc\ub85c \uad50\uccb4\ud560\uae4c\uc694?")) return;
 
   const options = getOneClickOptions();
+  const preset = getAiTemplatePreset(options.templateId);
   aiAnalyzeRunning = true;
   disableAiControls(true);
   try {
@@ -2960,6 +3104,10 @@ async function runAiOneClickProduction() {
     const storyboard = createLocalAiStoryboard(options);
     if (!storyboard) throw new Error("\uc81c\uc678 \ucd94\ucc9c\uc744 \uc81c\uc678\ud558\uba74 \uc0ac\uc6a9\ud560 \uc0ac\uc9c4\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.");
     applyLocalAiStoryboard(storyboard);
+    selectedTemplate = preset.id;
+    templateAppliedAt = new Date().toISOString();
+    if (oneClickTemplateInput) oneClickTemplateInput.value = selectedTemplate;
+    applyPresetOutputRatio(preset);
 
     if (options.autoCaption) {
       updateAiAnalyzeProgress(5, 6, "\uc790\ub9c9 \uc0dd\uc131 \uc911...");
@@ -2974,7 +3122,10 @@ async function runAiOneClickProduction() {
         ...aiStoryboard,
         aiOneClickGenerated: true,
         aiOneClickOptions: options,
-        generatedAt: aiOneClickGeneratedAt
+        generatedAt: aiOneClickGeneratedAt,
+        selectedTemplate,
+        templatePresetVersion,
+        templateAppliedAt
       };
     }
     updateAiAnalyzeProgress(6, 6, "\uc644\ub8cc");
@@ -3432,6 +3583,9 @@ if (aiAnalyzeButton) aiAnalyzeButton.addEventListener("click", runAiPhotoAnalysi
 if (aiDuplicateButton) aiDuplicateButton.addEventListener("click", runDuplicateDetection);
 if (selectExcludedButton) selectExcludedButton.addEventListener("click", selectExcludedRecommendedPhotos);
 if (aiOneClickButton) aiOneClickButton.addEventListener("click", runAiOneClickProduction);
+if (oneClickTemplateInput) oneClickTemplateInput.addEventListener("change", () => {
+  selectedTemplate = getAiTemplatePreset(oneClickTemplateInput.value).id;
+});
 if (aiPhotoFilter) aiPhotoFilter.addEventListener("change", () => {
   activeAiPhotoFilter = aiPhotoFilter.value;
   renderList();
