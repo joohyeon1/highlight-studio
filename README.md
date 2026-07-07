@@ -24,6 +24,10 @@ Implemented through STEP 10 final check and stabilization.
 
 ## Local Run
 
+Highlight Studio must run through the Express server. Do not open
+`public/index.html` directly with `file://`, because `/api/*`, uploads,
+outputs, FFmpeg rendering, and download routes require `server.js`.
+
 ```powershell
 cd E:\codex\highlight-studio
 npm install

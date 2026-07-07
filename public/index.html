@@ -4,6 +4,67 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Highlight Studio</title>
+  <style>
+    .file-launch-body {
+      align-items: center;
+      background: #f7f8fb;
+      color: #111827;
+      display: flex;
+      font-family: Arial, "Malgun Gothic", sans-serif;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 24px;
+    }
+
+    .file-launch-notice {
+      background: #ffffff;
+      border: 1px solid #d9dde7;
+      border-radius: 8px;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12);
+      max-width: 680px;
+      padding: 32px;
+      width: 100%;
+    }
+
+    .file-launch-notice h1 {
+      font-size: 24px;
+      margin: 0 0 16px;
+    }
+
+    .file-launch-notice p {
+      line-height: 1.7;
+      margin: 0 0 14px;
+    }
+
+    .file-launch-notice code {
+      background: #eef2f7;
+      border-radius: 6px;
+      display: block;
+      font-family: Consolas, "Courier New", monospace;
+      margin-top: 8px;
+      padding: 12px;
+      white-space: pre-wrap;
+    }
+  </style>
+  <script>
+    (function () {
+      if (window.location.protocol !== "file:") return;
+
+      document.addEventListener("DOMContentLoaded", function () {
+        document.body.className = "file-launch-body";
+        document.body.innerHTML =
+          '<main class="file-launch-notice">' +
+          '<h1>Highlight Studio &#49892;&#54665; &#48169;&#49885; &#50504;&#45236;</h1>' +
+          '<p>Highlight Studio&#45716; &#51649;&#51217; index.html&#51012; &#50668;&#45716; &#48169;&#49885;&#51060; &#50500;&#45785;&#45768;&#45796;.</p>' +
+          '<p>&#53552;&#48120;&#45328;&#50640;&#49436; &#50500;&#47000; &#47749;&#47161;&#51012; &#49892;&#54665;&#54620; &#54980; &#48652;&#46972;&#50864;&#51200;&#47196; &#51217;&#49549;&#54616;&#49464;&#50836;.</p>' +
+          '<code>cd E:\\codex\\highlight-studio\nnpm install\nnpm start</code>' +
+          '<p>&#48652;&#46972;&#50864;&#51200; &#51217;&#49549; &#51452;&#49548;</p>' +
+          '<code>http://localhost:4000</code>' +
+          '</main>';
+      });
+    })();
+  </script>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -444,6 +505,10 @@
       </div>
     </section>
   </main>
-  <script src="/app.js"></script>
+  <script>
+    if (window.location.protocol !== "file:") {
+      document.write('<script src="/app.js"><\/script>');
+    }
+  </script>
 </body>
 </html>
