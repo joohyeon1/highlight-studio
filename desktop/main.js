@@ -7,6 +7,7 @@ const PACKAGE_JSON = require(path.join(ROOT_DIR, "package.json"));
 const APP_VERSION = PACKAGE_JSON.version;
 const APP_PORT = Number(process.env.PORT || 4000);
 const APP_URL = `http://localhost:${APP_PORT}`;
+const APP_PROTOCOL = "highlightstudio";
 
 if (process.env.HIGHLIGHT_DESKTOP_USER_DATA) {
   app.setPath("userData", process.env.HIGHLIGHT_DESKTOP_USER_DATA);
@@ -18,6 +19,30 @@ let settingsWindow;
 let serverModule;
 let serverInstance;
 let settings;
+
+function registerAppProtocol() {
+  try {
+    if (process.defaultApp) {
+      app.setAsDefaultProtocolClient(APP_PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+    } else {
+      app.setAsDefaultProtocolClient(APP_PROTOCOL);
+    }
+    logApp(`Protocol registered: ${APP_PROTOCOL}://open`);
+  } catch (error) {
+    logError(error);
+  }
+}
+
+function isHighlightStudioProtocolUrl(value) {
+  return String(value || "").toLowerCase().startsWith(`${APP_PROTOCOL}://`);
+}
+
+function focusMainWindowFromProtocol() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+  mainWindow.loadURL(APP_URL);
+}
 
 function getUserDataPath(...parts) {
   return path.join(app.getPath("userData"), ...parts);
@@ -362,12 +387,31 @@ ipcMain.on("settings:choose-directory", async (_event, key) => {
   await chooseDirectory(key, title);
 });
 
-app.whenReady().then(async () => {
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", (_event, argv) => {
+    if (argv.some(isHighlightStudioProtocolUrl)) logApp("Protocol open requested from second instance");
+    focusMainWindowFromProtocol();
+  });
+
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    if (isHighlightStudioProtocolUrl(url)) {
+      logApp(`Protocol open requested: ${url}`);
+      focusMainWindowFromProtocol();
+    }
+  });
+
+  app.whenReady().then(async () => {
   try {
     try {
       ensureDir(getUserDataPath("logs"));
     } catch (_) {}
     logApp(`Highlight Studio desktop ${APP_VERSION} starting`);
+    registerAppProtocol();
     createSplashWindow();
     updateSplash("내부 서버 시작 중", 35);
     startInternalServer();
@@ -380,7 +424,8 @@ app.whenReady().then(async () => {
     dialog.showErrorBox("Highlight Studio 시작 실패", error.message);
     app.quit();
   }
-});
+  });
+}
 
 app.on("window-all-closed", () => {
   app.quit();
