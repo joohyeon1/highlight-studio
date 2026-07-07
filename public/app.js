@@ -12,6 +12,12 @@ const clearAllButton = document.getElementById("clearAllButton");
 const aiAnalyzeButton = document.getElementById("aiAnalyzeButton");
 const aiDuplicateButton = document.getElementById("aiDuplicateButton");
 const selectExcludedButton = document.getElementById("selectExcludedButton");
+const aiOneClickButton = document.getElementById("aiOneClickButton");
+const oneClickToneInput = document.getElementById("oneClickToneInput");
+const oneClickLengthInput = document.getElementById("oneClickLengthInput");
+const oneClickExcludeInput = document.getElementById("oneClickExcludeInput");
+const oneClickDuplicateInput = document.getElementById("oneClickDuplicateInput");
+const oneClickCaptionInput = document.getElementById("oneClickCaptionInput");
 const aiPhotoFilter = document.getElementById("aiPhotoFilter");
 const aiAnalyzeStatus = document.getElementById("aiAnalyzeStatus");
 const aiAnalyzeProgressBar = document.getElementById("aiAnalyzeProgressBar");
@@ -244,6 +250,9 @@ let aiStoryboard = null;
 let storyboardGeneratedAt = "";
 let captionTone = "emotional";
 let captionGeneratedAt = "";
+let aiOneClickGenerated = false;
+let aiOneClickOptions = null;
+let aiOneClickGeneratedAt = "";
 let aiAnalyzeRunning = false;
 let timelineZoom = 100;
 let activeTransitionPhotoId = null;
@@ -1147,12 +1156,18 @@ function createProjectData() {
       captionDojang: captionDojangInput?.value || "",
       captionTone,
       captionGeneratedAt,
+      aiOneClickGenerated,
+      aiOneClickOptions,
+      aiOneClickGeneratedAt,
       bgm: bgmReference,
       outputOptions: getOutputOptions()
     },
     storyboard: {
       aiStoryboard,
       storyboardGeneratedAt,
+      aiOneClickGenerated,
+      aiOneClickOptions,
+      generatedAt: aiOneClickGeneratedAt,
       captionTone,
       captionGeneratedAt,
       scenes: photos.map((photo, index) => ({
@@ -1196,7 +1211,15 @@ function restoreProjectData(data) {
   if (captionDojangInput) captionDojangInput.value = data.video?.captionDojang || "";
   captionTone = data.video?.captionTone || data.storyboard?.captionTone || "emotional";
   captionGeneratedAt = data.video?.captionGeneratedAt || data.storyboard?.captionGeneratedAt || "";
+  aiOneClickGenerated = Boolean(data.video?.aiOneClickGenerated || data.storyboard?.aiOneClickGenerated);
+  aiOneClickOptions = data.video?.aiOneClickOptions || data.storyboard?.aiOneClickOptions || null;
+  aiOneClickGeneratedAt = data.video?.aiOneClickGeneratedAt || data.storyboard?.generatedAt || "";
   if (captionToneInput) captionToneInput.value = captionTone;
+  if (oneClickToneInput) oneClickToneInput.value = aiOneClickOptions?.tone || captionTone || "emotional";
+  if (oneClickLengthInput) oneClickLengthInput.value = aiOneClickOptions?.length || "normal";
+  if (oneClickExcludeInput) oneClickExcludeInput.checked = aiOneClickOptions?.excludeRecommended !== false;
+  if (oneClickDuplicateInput) oneClickDuplicateInput.checked = aiOneClickOptions?.representativeOnly !== false;
+  if (oneClickCaptionInput) oneClickCaptionInput.checked = aiOneClickOptions?.autoCaption !== false;
   bgmReference = data.video?.bgm || null;
   bgmName.textContent = bgmReference?.name ? `BGM: ${bgmReference.name}` : "\uc120\ud0dd\ub41c BGM \uc5c6\uc74c";
   const outputOptions = data.video?.outputOptions || {};
@@ -1578,9 +1601,17 @@ function newProject() {
   storyboardGeneratedAt = "";
   captionTone = "emotional";
   captionGeneratedAt = "";
+  aiOneClickGenerated = false;
+  aiOneClickOptions = null;
+  aiOneClickGeneratedAt = "";
   if (captionEventInput) captionEventInput.value = "";
   if (captionDojangInput) captionDojangInput.value = "";
   if (captionToneInput) captionToneInput.value = captionTone;
+  if (oneClickToneInput) oneClickToneInput.value = captionTone;
+  if (oneClickLengthInput) oneClickLengthInput.value = "normal";
+  if (oneClickExcludeInput) oneClickExcludeInput.checked = true;
+  if (oneClickDuplicateInput) oneClickDuplicateInput.checked = true;
+  if (oneClickCaptionInput) oneClickCaptionInput.checked = true;
   if (aiPhotoFilter) aiPhotoFilter.value = "all";
   if (aiDuplicateButton) aiDuplicateButton.disabled = false;
   if (selectExcludedButton) selectExcludedButton.disabled = false;
@@ -2607,15 +2638,17 @@ function getPhotoCapturedTime(photo) {
   return Number.isFinite(time) ? time : 0;
 }
 
-function isAiStoryboardEligible(photo) {
-  if (photo.excludeRecommended || photo.aiQuality?.excludeRecommended || photo.aiQuality?.grade === "exclude") return false;
-  if (photo.aiDuplicate?.isDuplicateCandidate && !photo.representative) return false;
+function isAiStoryboardEligible(photo, options = {}) {
+  if (options.excludeRecommended !== false && (photo.excludeRecommended || photo.aiQuality?.excludeRecommended || photo.aiQuality?.grade === "exclude")) return false;
+  if (options.representativeOnly !== false && photo.aiDuplicate?.isDuplicateCandidate && !photo.representative) return false;
   return true;
 }
 
-function createLocalAiStoryboard() {
+function createLocalAiStoryboard(options = {}) {
+  const lengthLimits = { short: 8, normal: 16, long: Infinity };
+  const maxScenes = lengthLimits[options.length || "normal"] || lengthLimits.normal;
   const eligible = photos
-    .filter(isAiStoryboardEligible)
+    .filter(photo => isAiStoryboardEligible(photo, options))
     .map((photo, index) => ({
       photo,
       originalIndex: index,
@@ -2637,7 +2670,11 @@ function createLocalAiStoryboard() {
       if (a.capturedAt !== b.capturedAt) return b.capturedAt - a.capturedAt;
       return (b.score - a.score) || (a.originalIndex - b.originalIndex);
     });
-  const ordered = [...intro, ...body, ending].filter((item, index, list) => list.findIndex(other => other.photo.id === item.photo.id) === index);
+  const uniqueOrdered = [...intro, ...body, ending].filter((item, index, list) => list.findIndex(other => other.photo.id === item.photo.id) === index);
+  const ordered = Number.isFinite(maxScenes) && uniqueOrdered.length > maxScenes
+    ? [...uniqueOrdered.slice(0, Math.max(1, maxScenes - 1)), uniqueOrdered[uniqueOrdered.length - 1]]
+      .filter((item, index, list) => list.findIndex(other => other.photo.id === item.photo.id) === index)
+    : uniqueOrdered;
   const generatedAt = new Date().toISOString();
   return {
     source: "local-rule-ai",
@@ -2827,6 +2864,132 @@ function runAiCaptionBuilder() {
   renderOutputEstimate();
   autosaveProject();
   setMessage("AI \uc790\ub9c9\uc744 \uc0dd\uc131\ud588\uc2b5\ub2c8\ub2e4. \uae30\uc874 \uc790\ub9c9 \ud3b8\uc9d1 UI\uc5d0\uc11c \uc9c1\uc811 \uc218\uc815\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.");
+}
+
+function applyAiCaptionsForOneClick(toneValue = "emotional") {
+  captionTone = toneValue;
+  captionGeneratedAt = new Date().toISOString();
+  if (captionToneInput) captionToneInput.value = captionTone;
+  const toneRules = aiCaptionRules[captionTone] || aiCaptionRules.emotional;
+  const prefix = buildCaptionPrefix();
+  openingCaptionInput.value = prefix ? `${prefix}\n${toneRules.intro[0]}` : toneRules.intro[0];
+  endingCaptionInput.value = toneRules.ending[0];
+  const captionTargets = photos.filter(photo => photo.sceneSource === "ai" || photo.recommended || photo.selected);
+  captionTargets.forEach((photo, index) => {
+    photo.caption = {
+      ...normalizeCaption(photo.caption),
+      text: composeSceneCaption(photo, index, captionTargets.length, toneRules, prefix),
+      position: "bottom",
+      style: "shadow",
+      timing: "full",
+      aiCaptionGenerated: true,
+      captionTone,
+      captionGeneratedAt
+    };
+  });
+  if (aiStoryboard) {
+    aiStoryboard = {
+      ...aiStoryboard,
+      captionTone,
+      captionGeneratedAt,
+      scenes: (aiStoryboard.scenes || []).map(scene => {
+        if (scene.type === "opening") return { ...scene, caption: openingCaptionInput.value };
+        if (scene.type === "ending" && !scene.photoId) return { ...scene, caption: endingCaptionInput.value };
+        const photo = photos.find(item => item.id === scene.photoId);
+        return photo ? { ...scene, caption: normalizeCaption(photo.caption).text, aiCaptionGenerated: true } : scene;
+      })
+    };
+  }
+}
+
+function getOneClickOptions() {
+  return {
+    tone: oneClickToneInput?.value || captionToneInput?.value || "emotional",
+    length: oneClickLengthInput?.value || "normal",
+    excludeRecommended: oneClickExcludeInput?.checked !== false,
+    representativeOnly: oneClickDuplicateInput?.checked !== false,
+    autoCaption: oneClickCaptionInput?.checked !== false
+  };
+}
+
+function disableAiControls(disabled) {
+  [aiAnalyzeButton, aiDuplicateButton, selectExcludedButton, aiOneClickButton, aiStoryboardButton, aiCaptionButton, aiAutoEditButton, aiRecommendButton]
+    .filter(Boolean)
+    .forEach(button => { button.disabled = disabled; });
+}
+
+async function runAiOneClickProduction() {
+  if (!photos.length || aiAnalyzeRunning) {
+    setMessage("\uc6d0\ud074\ub9ad \uc81c\uc791\ud560 \uc0ac\uc9c4\uc774 \uc5c6\uac70\ub098 AI \uc791\uc5c5\uc774 \uc9c4\ud589 \uc911\uc785\ub2c8\ub2e4.");
+    return;
+  }
+  const hasExistingTimeline = photos.length > 1 || photos.some(photo => photo.sceneSource || photo.storyRole || photo.recommended || normalizeCaption(photo.caption).text.trim());
+  if (hasExistingTimeline && !window.confirm("\uae30\uc874 \ud0c0\uc784\ub77c\uc778\uc744 AI \uc6d0\ud074\ub9ad \uc81c\uc791 \uacb0\uacfc\ub85c \uad50\uccb4\ud560\uae4c\uc694?")) return;
+
+  const options = getOneClickOptions();
+  aiAnalyzeRunning = true;
+  disableAiControls(true);
+  try {
+    updateAiAnalyzeProgress(0, 6, "\uc0ac\uc9c4 \ubd84\uc11d \uc911...");
+    for (let index = 0; index < photos.length; index += 1) {
+      const photo = photos[index];
+      updateAiAnalyzeProgress(index, photos.length, `\uc0ac\uc9c4 \ubd84\uc11d \uc911... ${index + 1} / ${photos.length}`);
+      const analysis = await analyzePhotoPixels(photo);
+      photo.aiAnalysis = analysis;
+      photo.imageHash = analysis.imageHash || "";
+      photo.aiScore = analysis.score;
+      photo.aiExcluded = analysis.quality === "excluded";
+      photo.recommended = photo.locked || analysis.quality === "recommended";
+      photo.aiReasons = [
+        `\ud754\ub4e4\ub9bc ${analysis.blur}`,
+        `\uc120\uba85\ub3c4 ${analysis.sharpness}`,
+        `\ubc1d\uae30 ${analysis.brightness}`,
+        `\ub178\uc774\uc988 ${analysis.noise}`,
+        analysis.orientation
+      ];
+      refreshPhotoQuality(photo);
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    updateAiAnalyzeProgress(2, 6, "\uc911\ubcf5 \uc0ac\uc9c4 \ud655\uc778 \uc911...");
+    const duplicateGroupCount = applyDuplicateGroups();
+    updateAiAnalyzeProgress(3, 6, "\uc81c\uc678 \ucd94\ucc9c \uc801\uc6a9 \uc911...");
+    refreshAllPhotoQuality();
+
+    updateAiAnalyzeProgress(4, 6, "\uc2a4\ud1a0\ub9ac\ubcf4\ub4dc \uc0dd\uc131 \uc911...");
+    const storyboard = createLocalAiStoryboard(options);
+    if (!storyboard) throw new Error("\uc81c\uc678 \ucd94\ucc9c\uc744 \uc81c\uc678\ud558\uba74 \uc0ac\uc6a9\ud560 \uc0ac\uc9c4\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.");
+    applyLocalAiStoryboard(storyboard);
+
+    if (options.autoCaption) {
+      updateAiAnalyzeProgress(5, 6, "\uc790\ub9c9 \uc0dd\uc131 \uc911...");
+      applyAiCaptionsForOneClick(options.tone);
+    }
+
+    aiOneClickGenerated = true;
+    aiOneClickOptions = options;
+    aiOneClickGeneratedAt = new Date().toISOString();
+    if (aiStoryboard) {
+      aiStoryboard = {
+        ...aiStoryboard,
+        aiOneClickGenerated: true,
+        aiOneClickOptions: options,
+        generatedAt: aiOneClickGeneratedAt
+      };
+    }
+    updateAiAnalyzeProgress(6, 6, "\uc644\ub8cc");
+    recommendationSummary.textContent = `AI \uc6d0\ud074\ub9ad \uc81c\uc791 \uc644\ub8cc: ${selectedPhotoIds.size}\uc7a5 \uad6c\uc131, \uc911\ubcf5 ${duplicateGroupCount}\uadf8\ub8f9 \ud655\uc778.`;
+    setMessage("AI \uc601\uc0c1 \uad6c\uc131\uc774 \uc644\ub8cc\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \ud0c0\uc784\ub77c\uc778\uc744 \ud655\uc778\ud55c \ub4a4 \ub80c\ub354\ub9c1 \uc2dc\uc791 \ubc84\ud2bc\uc744 \ub20c\ub7ec\uc8fc\uc138\uc694.");
+    renderList();
+    renderOutputEstimate();
+    autosaveProject();
+  } catch (error) {
+    updateAiAnalyzeProgress(0, 6, "\uc2e4\ud328");
+    setMessage(error.message || "AI \uc6d0\ud074\ub9ad \uc81c\uc791\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
+  } finally {
+    aiAnalyzeRunning = false;
+    disableAiControls(false);
+  }
 }
 
 async function runAiAutoEdit() {
@@ -3268,6 +3431,7 @@ storyboardList.addEventListener("drop", event => {
 if (aiAnalyzeButton) aiAnalyzeButton.addEventListener("click", runAiPhotoAnalysis);
 if (aiDuplicateButton) aiDuplicateButton.addEventListener("click", runDuplicateDetection);
 if (selectExcludedButton) selectExcludedButton.addEventListener("click", selectExcludedRecommendedPhotos);
+if (aiOneClickButton) aiOneClickButton.addEventListener("click", runAiOneClickProduction);
 if (aiPhotoFilter) aiPhotoFilter.addEventListener("change", () => {
   activeAiPhotoFilter = aiPhotoFilter.value;
   renderList();
