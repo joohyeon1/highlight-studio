@@ -15,7 +15,7 @@ const UPLOAD_DIR = path.resolve(process.env.HIGHLIGHT_UPLOAD_DIR || path.join(RO
 const OUTPUT_DIR = path.resolve(process.env.HIGHLIGHT_OUTPUT_DIR || path.join(ROOT_DIR, "outputs"));
 const DATA_DIR = path.resolve(process.env.HIGHLIGHT_DATA_DIR || path.join(ROOT_DIR, "data"));
 const USER_TEMPLATES_PATH = path.join(DATA_DIR, "templates.json");
-const MAX_PHOTOS = Number(process.env.HIGHLIGHT_MAX_PHOTOS || 100);
+const MAX_PHOTOS = Number(process.env.HIGHLIGHT_MAX_PHOTOS || 200);
 const PHOTO_SECONDS = Number(process.env.HIGHLIGHT_PHOTO_SECONDS || 2);
 const SUPPORTED_RENDER_TRANSITIONS = new Set(["none", "fade", "crossfade"]);
 const SUPPORTED_RENDER_EFFECTS = new Set(["none", "slowZoomIn", "slowZoomOut"]);
@@ -254,7 +254,7 @@ const upload = multer({
   storage,
   limits: {
     files: MAX_PHOTOS,
-    fileSize: 18 * 1024 * 1024
+    fileSize: 30 * 1024 * 1024
   },
   fileFilter: (_req, file, cb) => {
     if (/^image\/(jpeg|png|webp)$/i.test(file.mimetype || "")) return cb(null, true);
@@ -293,6 +293,7 @@ function publicJob(job) {
     durationSeconds: job.durationSeconds,
     bytes: job.bytes,
     error: job.error,
+    failedPhotos: job.failedPhotos || [],
     logs: job.logs,
     encoderRequested: job.encoderRequested || "auto",
     encoder: job.encoder || "",
@@ -322,6 +323,7 @@ function publicQueue() {
       filename: job.filename,
       encoder: job.encoder || "",
       encoderCodec: job.encoderCodec || "",
+      failedCount: (job.failedPhotos || []).length,
       error: job.error
     }));
 }
@@ -335,25 +337,44 @@ function scheduleJobCleanup(jobId) {
   }, 30 * 60 * 1000);
 }
 
-function runFfmpeg(args, job) {
+function runFfmpeg(args, job, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpegPath, args, { windowsHide: true });
     if (job) job.currentProcess = child;
     let stderr = "";
+    let timedOut = false;
+    let loggedLines = 0;
+    let lastLoggedLine = "";
+    const timeoutMs = Number(options.timeoutMs || 0);
+    const timeout = timeoutMs > 0 ? setTimeout(() => {
+      timedOut = true;
+      pushJobLog(job, `FFmpeg 응답 지연으로 프로세스 종료: ${Math.round(timeoutMs / 1000)}초 제한`);
+      try {
+        child.kill("SIGTERM");
+      } catch (_) {}
+    }, timeoutMs) : null;
     child.stderr.on("data", chunk => {
       stderr += String(chunk);
       const lines = String(chunk).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
       for (const line of lines.slice(-2)) {
-        if (/frame=|error|failed|invalid/i.test(line)) pushJobLog(job, line);
+        if (loggedLines >= 12) continue;
+        if (/frame=|error|failed|invalid/i.test(line) && line !== lastLoggedLine) {
+          pushJobLog(job, line);
+          lastLoggedLine = line;
+          loggedLines += 1;
+        }
       }
     });
     child.on("error", error => {
+      if (timeout) clearTimeout(timeout);
       if (job) job.currentProcess = null;
       reject(error);
     });
     child.on("close", code => {
+      if (timeout) clearTimeout(timeout);
       if (job) job.currentProcess = null;
       if (job?.canceled) return reject(new Error("렌더링이 취소되었습니다."));
+      if (timedOut) return reject(new Error("FFmpeg 처리 시간이 초과되었습니다."));
       if (code === 0) return resolve();
       reject(new Error(stderr.trim() || `ffmpeg exited with code ${code}`));
     });
@@ -792,6 +813,7 @@ async function createRenderFromProject(project, files, job) {
   job.encoderRequested = encoderPlan.requested;
   job.encoder = encoderPlan.selected;
   job.encoderCodec = RENDER_ENCODERS[encoderPlan.selected]?.codec || "libx264";
+  job.failedPhotos = [];
   pushJobLog(job, `현재 사용 인코더: ${RENDER_ENCODERS[encoderPlan.selected]?.label || "CPU"} (${job.encoderCodec})`);
   const outputPath = uniqueOutputPath(outputOptions.fileName || `${safeName(project.video?.title || "highlight-studio")}.mp4`);
   const segmentPaths = [];
@@ -828,28 +850,43 @@ async function createRenderFromProject(project, files, job) {
         segmentPath
       ];
       try {
-        await runFfmpeg(segmentArgs, job);
+        await runFfmpeg(segmentArgs, job, { timeoutMs: 10000 });
       } catch (error) {
+        if (job?.canceled) throw error;
         if (job.encoder !== "cpu") {
           pushJobLog(job, `${job.encoderCodec} 인코딩 실패 - CPU(libx264)로 자동 재시도`);
           job.encoder = "cpu";
           job.encoderCodec = "libx264";
-          await runFfmpeg([
-            "-y",
-            "-loop", "1",
-            "-t", String(duration),
-            "-i", item.file.path,
-            "-vf", buildSceneFilter(photo, width, height, fps, duration),
-            "-r", String(fps),
-            "-an",
-            ...getEncoderArgs("cpu", outputOptions.quality),
-            segmentPath
-          ], job);
+          try {
+            await runFfmpeg([
+              "-y",
+              "-loop", "1",
+              "-t", String(duration),
+              "-i", item.file.path,
+              "-vf", buildSceneFilter(photo, width, height, fps, duration),
+              "-r", String(fps),
+              "-an",
+              ...getEncoderArgs("cpu", outputOptions.quality),
+              segmentPath
+            ], job, { timeoutMs: 10000 });
+          } catch (retryError) {
+            if (job?.canceled) throw retryError;
+            const failedName = item.file.originalname || photo.fileName || `photo-${index + 1}`;
+            job.failedPhotos.push({ index: index + 1, name: failedName, error: retryError.message || "사진 처리 실패" });
+            pushJobLog(job, `사진 스킵: ${index + 1}/${renderPhotos.length} - ${failedName} - ${retryError.message || "사진 처리 실패"}`);
+            continue;
+          }
         } else {
-          throw error;
+          const failedName = item.file.originalname || photo.fileName || `photo-${index + 1}`;
+          job.failedPhotos.push({ index: index + 1, name: failedName, error: error.message || "사진 처리 실패" });
+          pushJobLog(job, `사진 스킵: ${index + 1}/${renderPhotos.length} - ${failedName} - ${error.message || "사진 처리 실패"}`);
+          continue;
         }
       }
       segmentPaths.push({ path: segmentPath, duration });
+    }
+    if (!segmentPaths.length) {
+      throw new Error("처리 가능한 사진이 없습니다. 손상된 사진 또는 지원하지 않는 이미지 파일을 확인해 주세요.");
     }
 
     const listPath = path.join(workDir, "segments.txt");
@@ -864,11 +901,12 @@ async function createRenderFromProject(project, files, job) {
       "-i", listPath,
       "-c", "copy",
       outputPath
-    ], job);
+    ], job, { timeoutMs: 180000 });
 
     const stat = fs.statSync(outputPath);
     const filename = path.basename(outputPath);
     pushJobLog(job, `출력 파일 생성: ${filename}`);
+    if (job.failedPhotos.length) pushJobLog(job, `스킵된 사진: ${job.failedPhotos.length}장`);
     pushJobLog(job, `완료 시간: ${new Date().toLocaleString("ko-KR", { hour12: false })}`);
     return {
       filename,
@@ -1185,6 +1223,7 @@ app.post("/api/render", upload.array("photos", MAX_PHOTOS), async (req, res) => 
       durationSeconds: 0,
       bytes: 0,
       error: "",
+      failedPhotos: [],
       logs: [{ time: now, message: "렌더링 작업 대기" }],
       project,
       files: req.files || [],

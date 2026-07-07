@@ -1286,7 +1286,8 @@ async function pollRenderStatus(jobId) {
     cancelRenderButton.disabled = true;
     generateButton.disabled = photos.length === 0;
     if (job.status === "completed") {
-      setMessage(`MP4 \uc0dd\uc131 \uc644\ub8cc: ${job.filename} / ${formatDuration(Math.round(job.durationSeconds || 0))} / ${formatBytes(job.bytes || 0)}`);
+      const skipped = Array.isArray(job.failedPhotos) && job.failedPhotos.length ? ` / \uc2a4\ud0b5 ${job.failedPhotos.length}\uc7a5` : "";
+      setMessage(`MP4 \uc0dd\uc131 \uc644\ub8cc: ${job.filename} / ${formatDuration(Math.round(job.durationSeconds || 0))} / ${formatBytes(job.bytes || 0)}${skipped}`);
       loadOutputs(job.filename);
     } else if (job.status === "canceled") {
       setMessage("MP4 \uc0dd\uc131\uc744 \ucde8\uc18c\ud588\uc2b5\ub2c8\ub2e4. \uc784\uc2dc \ud30c\uc77c\uc740 \uc815\ub9ac\ub429\ub2c8\ub2e4.");
