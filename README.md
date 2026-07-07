@@ -200,6 +200,28 @@ dist/Highlight Studio Setup 0.1.0.exe
 dist/win-unpacked/Highlight Studio.exe
 ```
 
+Installer distribution:
+
+- Run `npm run dist` to create the Windows installer.
+- Share the installer from the `dist/` folder.
+- The installer file is named like `Highlight Studio Setup 0.1.0.exe`.
+- The unpacked executable is available at `dist/win-unpacked/Highlight Studio.exe`.
+- GitHub Releases upload is planned for the next step; this repository does not upload installers automatically yet.
+
+Installed app run:
+
+```text
+Highlight Studio.exe
+```
+
+SportsLink launch:
+
+- SportsLink only provides a Highlight Studio launch button.
+- The button first tries `highlightstudio://open`.
+- If the installed app is not available, it checks `http://localhost:4000/api/ping`.
+- During development, run `npm start` and open `http://localhost:4000`.
+- SportsLink does not receive photos, videos, project files, or student data.
+
 Desktop behavior:
 
 - Starts the internal Express server on `localhost:4000`.
