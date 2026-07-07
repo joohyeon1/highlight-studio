@@ -162,17 +162,34 @@ Summary:
 
 ## Windows Desktop App
 
-STEP 11 adds an Electron desktop shell around the existing Express app.
+The Electron desktop app wraps the existing Express server. Users do not need
+to open a browser manually: the desktop shell starts the local server, waits for
+it to become ready, then opens `http://localhost:4000` inside the Electron
+window.
+
+Development server:
+
+```powershell
+cd E:\codex\highlight-studio
+npm install
+npm start
+```
+
+Open:
+
+```text
+http://localhost:4000
+```
 
 Desktop development:
 
-```text
-npm run desktop
+```powershell
+npm run electron
 ```
 
 Windows installer build:
 
-```text
+```powershell
 npm run dist
 ```
 
@@ -183,7 +200,17 @@ dist/Highlight Studio Setup 0.1.0.exe
 dist/win-unpacked/Highlight Studio.exe
 ```
 
-The desktop app starts the internal Express server on `localhost:4000`, waits for `/api/health`, then opens the main Highlight Studio screen. Packaged builds use local AppData folders for uploads, outputs, settings, and logs.
+Desktop behavior:
+
+- Starts the internal Express server on `localhost:4000`.
+- Opens the main Highlight Studio screen inside Electron.
+- Stops the internal server when the app exits.
+- Prepares the custom protocol `highlightstudio://open`.
+- If the app is already running, a protocol open request focuses the existing window.
+
+Packaged builds use local AppData folders for uploads, outputs, settings, and logs.
+Photos and videos are still processed locally; no Firestore, Firebase, or long-term
+server storage is used.
 
 ## Final Check Notes
 

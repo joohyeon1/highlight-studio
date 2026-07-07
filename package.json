@@ -11,7 +11,7 @@
     "electron": "electron .",
     "desktop": "electron .",
     "build": "electron-builder --win nsis",
-    "dist": "electron-builder --win nsis",
+    "dist": "electron-builder",
     "pack": "electron-builder --dir",
     "check": "node --check server.js && node --check public/app.js && node --check desktop/main.js && node --check desktop/preload.js"
   },
@@ -28,7 +28,7 @@
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "kr.sportlink.highlightstudio",
+    "appId": "com.sportlink.highlightstudio",
     "productName": "Highlight Studio",
     "directories": {
       "buildResources": "build",
@@ -53,6 +53,14 @@
       "icon": "build/icon.ico",
       "signAndEditExecutable": false
     },
+    "protocols": [
+      {
+        "name": "Highlight Studio",
+        "schemes": [
+          "highlightstudio"
+        ]
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "perMachine": false,
