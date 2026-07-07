@@ -268,6 +268,31 @@ function pushJobLog(job, message) {
   if (job.logs.length > 300) job.logs.shift();
 }
 
+function displayFileName(value, fallback = "photo") {
+  return String(value || fallback)
+    .replace(/[\r\n\t]/g, " ")
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+    .trim()
+    .slice(0, 160) || fallback;
+}
+
+function decodeUploadName(value) {
+  const name = String(value || "");
+  if (!name || /[가-힣]/.test(name)) return name;
+  try {
+    const decoded = Buffer.from(name, "latin1").toString("utf8");
+    if (decoded && !decoded.includes("\uFFFD") && /[가-힣]/.test(decoded)) return decoded;
+  } catch (_) {}
+  return name;
+}
+
+function normalizeUploadedFiles(files = []) {
+  for (const file of files) {
+    file.originalname = decodeUploadName(file.originalname);
+  }
+  return files;
+}
+
 function updateJob(job, patch = {}) {
   if (!job) return;
   Object.assign(job, patch, { updatedAt: new Date().toISOString() });
@@ -491,6 +516,32 @@ function ffmpegListPath(filePath) {
   return filePath.replace(/\\/g, "/").replace(/'/g, "'\\''");
 }
 
+async function probeInputImage(file, job) {
+  const name = displayFileName(file?.originalname, "photo");
+  if (!file?.path || !fs.existsSync(file.path)) {
+    return { ok: false, error: `${name} 파일을 찾을 수 없습니다.` };
+  }
+  try {
+    const stat = fs.statSync(file.path);
+    if (!stat.size) return { ok: false, error: `${name} 파일 크기가 0입니다.` };
+  } catch (error) {
+    return { ok: false, error: `${name} 파일 정보를 읽을 수 없습니다: ${error.message}` };
+  }
+
+  try {
+    await runFfmpeg([
+      "-v", "error",
+      "-i", file.path,
+      "-frames:v", "1",
+      "-f", "null",
+      "-"
+    ], job, { timeoutMs: 30000 });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: `${name} 이미지 확인 실패: ${error.message || "손상되었거나 지원하지 않는 이미지입니다."}` };
+  }
+}
+
 function safeOutputFileName(value) {
   const parsed = path.parse(String(value || "highlight-studio.mp4"));
   const base = safeName(parsed.name || "highlight-studio");
@@ -556,14 +607,33 @@ function parseProjectPayload(value) {
 
 function getRenderPhotos(project, files) {
   const fileById = new Map();
+  const fileByName = new Map();
+  const usedFiles = new Set();
   for (const file of files) {
     const id = path.parse(file.originalname || "").name;
-    fileById.set(id, file);
+    if (id) fileById.set(id, file);
+    if (file.originalname) fileByName.set(file.originalname, file);
   }
 
-  return project.photos
-    .filter(photo => photo.selected !== false)
-    .map(photo => ({ photo, file: fileById.get(photo.id) }))
+  const selectedPhotos = project.photos.filter(photo => photo.selected !== false);
+  return selectedPhotos
+    .map((photo, index) => {
+      const candidates = [
+        photo.id,
+        photo.fileName,
+        photo.name,
+        photo.originalName
+      ].filter(Boolean).map(String);
+      let file = null;
+      for (const candidate of candidates) {
+        file = fileById.get(path.parse(candidate).name) || fileByName.get(candidate);
+        if (file && !usedFiles.has(file.path)) break;
+        file = null;
+      }
+      if (!file && files[index] && !usedFiles.has(files[index].path)) file = files[index];
+      if (file) usedFiles.add(file.path);
+      return { photo, file };
+    })
     .filter(item => item.file);
 }
 
@@ -817,21 +887,29 @@ async function createRenderFromProject(project, files, job) {
   pushJobLog(job, `현재 사용 인코더: ${RENDER_ENCODERS[encoderPlan.selected]?.label || "CPU"} (${job.encoderCodec})`);
   const outputPath = uniqueOutputPath(outputOptions.fileName || `${safeName(project.video?.title || "highlight-studio")}.mp4`);
   const segmentPaths = [];
+  const sceneTimeoutMs = Math.max(45000, Math.min(180000, (width * height >= 1920 * 1080 ? 90000 : 60000)));
 
   try {
     for (const [index, item] of renderPhotos.entries()) {
       if (job?.canceled) throw new Error("렌더링이 취소되었습니다.");
       const photo = item.photo;
+      const displayName = displayFileName(item.file.originalname || photo.fileName || `photo-${index + 1}`, `photo-${index + 1}`);
       const duration = Math.max(0.5, Math.min(30, Number(photo.durationSeconds || photo.duration || outputOptions.defaultPhotoDuration || PHOTO_SECONDS)));
       const segmentPath = path.join(workDir, `scene-${String(index + 1).padStart(3, "0")}.mp4`);
       updateJob(job, {
         status: "rendering",
         currentPhoto: index + 1,
-        currentPhotoName: item.file.originalname || photo.fileName || `photo-${index + 1}`,
+        currentPhotoName: displayName,
         totalPhotos: renderPhotos.length,
         progress: Math.round(8 + (index / renderPhotos.length) * 62)
       });
-      pushJobLog(job, `사진 처리 중: ${index + 1}/${renderPhotos.length}`);
+      pushJobLog(job, `사진 처리 중: ${index + 1}/${renderPhotos.length} - ${displayName}`);
+      const probe = await probeInputImage(item.file, job);
+      if (!probe.ok) {
+        job.failedPhotos.push({ index: index + 1, name: displayName, error: probe.error });
+        pushJobLog(job, `사진 스킵: ${index + 1}/${renderPhotos.length} - ${probe.error}`);
+        continue;
+      }
       if (String(photo.caption?.text || "").trim()) {
         pushJobLog(job, `자막 적용: ${index + 1}/${renderPhotos.length}`);
       }
@@ -850,7 +928,7 @@ async function createRenderFromProject(project, files, job) {
         segmentPath
       ];
       try {
-        await runFfmpeg(segmentArgs, job, { timeoutMs: 10000 });
+        await runFfmpeg(segmentArgs, job, { timeoutMs: sceneTimeoutMs });
       } catch (error) {
         if (job?.canceled) throw error;
         if (job.encoder !== "cpu") {
@@ -868,22 +946,23 @@ async function createRenderFromProject(project, files, job) {
               "-an",
               ...getEncoderArgs("cpu", outputOptions.quality),
               segmentPath
-            ], job, { timeoutMs: 10000 });
+            ], job, { timeoutMs: sceneTimeoutMs });
           } catch (retryError) {
             if (job?.canceled) throw retryError;
-            const failedName = item.file.originalname || photo.fileName || `photo-${index + 1}`;
-            job.failedPhotos.push({ index: index + 1, name: failedName, error: retryError.message || "사진 처리 실패" });
-            pushJobLog(job, `사진 스킵: ${index + 1}/${renderPhotos.length} - ${failedName} - ${retryError.message || "사진 처리 실패"}`);
+            job.failedPhotos.push({ index: index + 1, name: displayName, error: retryError.message || "사진 처리 실패" });
+            pushJobLog(job, `사진 스킵: ${index + 1}/${renderPhotos.length} - ${displayName} - ${retryError.message || "사진 처리 실패"}`);
             continue;
           }
         } else {
-          const failedName = item.file.originalname || photo.fileName || `photo-${index + 1}`;
-          job.failedPhotos.push({ index: index + 1, name: failedName, error: error.message || "사진 처리 실패" });
-          pushJobLog(job, `사진 스킵: ${index + 1}/${renderPhotos.length} - ${failedName} - ${error.message || "사진 처리 실패"}`);
+          job.failedPhotos.push({ index: index + 1, name: displayName, error: error.message || "사진 처리 실패" });
+          pushJobLog(job, `사진 스킵: ${index + 1}/${renderPhotos.length} - ${displayName} - ${error.message || "사진 처리 실패"}`);
           continue;
         }
       }
       segmentPaths.push({ path: segmentPath, duration });
+      updateJob(job, {
+        progress: Math.round(8 + ((index + 1) / renderPhotos.length) * 62)
+      });
     }
     if (!segmentPaths.length) {
       throw new Error("처리 가능한 사진이 없습니다. 손상된 사진 또는 지원하지 않는 이미지 파일을 확인해 주세요.");
@@ -1195,6 +1274,7 @@ app.get("/api/update/check", (_req, res) => {
 
 app.post("/api/videos", upload.array("photos", MAX_PHOTOS), async (req, res) => {
   try {
+    normalizeUploadedFiles(req.files);
     const result = await createVideoFromPhotos(req.files || [], {
       title: req.body.title,
       secondsPerPhoto: req.body.secondsPerPhoto
@@ -1208,6 +1288,7 @@ app.post("/api/videos", upload.array("photos", MAX_PHOTOS), async (req, res) => 
 
 app.post("/api/render", upload.array("photos", MAX_PHOTOS), async (req, res) => {
   try {
+    normalizeUploadedFiles(req.files);
     const project = parseProjectPayload(req.body.project);
     const jobId = makeId("render");
     const now = new Date().toISOString();
