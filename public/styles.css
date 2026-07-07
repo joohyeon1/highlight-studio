@@ -64,6 +64,63 @@ button { cursor: pointer; }
   font-size: 13px;
   font-weight: 800;
 }
+.recent-projects-panel {
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, .06);
+}
+.recent-projects-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+}
+.recent-projects-head span {
+  color: var(--muted);
+  font-weight: 800;
+}
+.recent-projects-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.recent-project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.recent-project-row strong,
+.recent-project-row span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-project-row span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.recent-project-row button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  background: #fff;
+  color: #1d4ed8;
+  font-weight: 900;
+}
 .restore-banner {
   display: flex;
   justify-content: space-between;

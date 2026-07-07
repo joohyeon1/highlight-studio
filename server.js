@@ -121,6 +121,8 @@ const renderJobs = new Map();
 const renderQueue = [];
 let activeRenderJobId = null;
 let encoderDetectionCache = null;
+let projectAutosave = null;
+const recentProjects = [];
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -157,7 +159,7 @@ function licenseGate(req, res, next) {
 
 function safeName(value) {
   return String(value || "highlight")
-    .normalize("NFKD")
+    .normalize("NFC")
     .replace(/[^a-zA-Z0-9가-힣_-]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
@@ -603,6 +605,56 @@ function parseProjectPayload(value) {
   const photos = Array.isArray(parsed.photos) ? parsed.photos : [];
   if (!photos.length) throw new Error("렌더링할 사진이 없습니다.");
   return parsed;
+}
+
+function validateProjectDocument(value) {
+  const project = value && typeof value === "object" ? value : null;
+  if (!project) throw new Error("프로젝트 데이터가 없습니다.");
+  if (project.extension && project.extension !== ".hsp") throw new Error(".hsp 프로젝트 형식이 아닙니다.");
+  if (project.format && project.format !== "Highlight Studio Project") throw new Error("Highlight Studio 프로젝트 파일이 아닙니다.");
+  if (!Array.isArray(project.photos)) throw new Error("사진 목록이 없는 프로젝트입니다.");
+  if (!project.project || typeof project.project !== "object") {
+    project.project = {
+      name: project.video?.title || "Highlight Studio Project",
+      createdAt: new Date().toISOString(),
+      modifiedAt: new Date().toISOString()
+    };
+  }
+  if (!project.video || typeof project.video !== "object") project.video = {};
+  project.extension = ".hsp";
+  project.format = "Highlight Studio Project";
+  project.version = Number(project.version || 1);
+  project.project.name = String(project.project.name || project.video.title || "Highlight Studio Project").slice(0, 120);
+  project.project.createdAt = project.project.createdAt || new Date().toISOString();
+  project.project.modifiedAt = new Date().toISOString();
+  return project;
+}
+
+function projectFileName(project, fallback = "highlight-studio-project.hsp") {
+  return `${safeName(project?.project?.name || project?.video?.title || fallback.replace(/\.hsp$/i, ""))}.hsp`;
+}
+
+function projectSummary(project, source = "browser") {
+  return {
+    id: makeId("recent"),
+    name: project?.project?.name || project?.video?.title || "Highlight Studio Project",
+    fileName: projectFileName(project),
+    source,
+    photoCount: Array.isArray(project?.photos) ? project.photos.length : 0,
+    studentCount: Array.isArray(project?.students) ? project.students.length : 0,
+    modifiedAt: project?.project?.modifiedAt || new Date().toISOString(),
+    addedAt: new Date().toISOString()
+  };
+}
+
+function rememberProject(project, source = "browser") {
+  const summary = projectSummary(project, source);
+  const key = `${summary.name}|${summary.fileName}`;
+  const duplicateIndex = recentProjects.findIndex(item => `${item.name}|${item.fileName}` === key);
+  if (duplicateIndex >= 0) recentProjects.splice(duplicateIndex, 1);
+  recentProjects.unshift(summary);
+  recentProjects.splice(10);
+  return summary;
 }
 
 function getRenderPhotos(project, files) {
@@ -1114,7 +1166,7 @@ async function createVideoFromPhotos(files, options = {}) {
 }
 
 app.use(licenseGate);
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "10mb" }));
 app.use("/outputs", express.static(OUTPUT_DIR, { fallthrough: false }));
 app.use(express.static(PUBLIC_DIR));
 
@@ -1191,6 +1243,55 @@ app.post("/api/ai/create-storyboard", (req, res) => {
 
 app.get("/api/templates", (_req, res) => {
   res.json({ ok: true, templates: getAllTemplates() });
+});
+
+app.post("/api/project/save", (req, res) => {
+  try {
+    const project = validateProjectDocument(req.body?.project || req.body);
+    const summary = rememberProject(project, "save");
+    res.json({
+      ok: true,
+      fileName: projectFileName(project, req.body?.fileName),
+      project,
+      recent: summary,
+      message: ".hsp 프로젝트 저장 준비가 완료되었습니다."
+    });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message || "프로젝트 저장에 실패했습니다." });
+  }
+});
+
+app.post("/api/project/load", (req, res) => {
+  try {
+    const project = validateProjectDocument(req.body?.project || req.body);
+    const summary = rememberProject(project, "load");
+    res.json({ ok: true, project, recent: summary });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message || "프로젝트 불러오기에 실패했습니다." });
+  }
+});
+
+app.get("/api/project/recent", (_req, res) => {
+  res.json({ ok: true, recent: recentProjects });
+});
+
+app.post("/api/project/autosave", (req, res) => {
+  try {
+    const project = validateProjectDocument(req.body?.project || req.body);
+    projectAutosave = {
+      project,
+      savedAt: new Date().toISOString(),
+      summary: projectSummary(project, "autosave")
+    };
+    res.json({ ok: true, autosave: projectAutosave.summary });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message || "자동 저장에 실패했습니다." });
+  }
+});
+
+app.get("/api/project/autosave", (_req, res) => {
+  if (!projectAutosave) return res.json({ ok: true, autosave: null });
+  res.json({ ok: true, autosave: projectAutosave.summary, project: projectAutosave.project, savedAt: projectAutosave.savedAt });
 });
 
 app.post("/api/templates", (req, res) => {

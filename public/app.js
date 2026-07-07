@@ -50,8 +50,11 @@ const newProjectButton = document.getElementById("newProjectButton");
 const openProjectButton = document.getElementById("openProjectButton");
 const saveProjectButton = document.getElementById("saveProjectButton");
 const saveAsProjectButton = document.getElementById("saveAsProjectButton");
+const restoreRecentButton = document.getElementById("restoreRecentButton");
 const projectInput = document.getElementById("projectInput");
 const projectStatus = document.getElementById("projectStatus");
+const recentProjectsPanel = document.getElementById("recentProjectsPanel");
+const recentProjectsList = document.getElementById("recentProjectsList");
 const restoreBanner = document.getElementById("restoreBanner");
 const restoreAutosaveButton = document.getElementById("restoreAutosaveButton");
 const dismissAutosaveButton = document.getElementById("dismissAutosaveButton");
@@ -100,6 +103,7 @@ const updateStatusList = document.getElementById("updateStatusList");
 
 const supportedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const autosaveKey = "highlightStudio.autosaveProject";
+const recentProjectsKey = "highlightStudio.recentProjects";
 const authStorageKey = "highlightStudio.localAuth";
 const projectFormatVersion = 1;
 const labelColors = ["#2563eb", "#16a34a", "#f97316", "#9333ea", "#0891b2", "#dc2626", "#4f46e5", "#0f766e"];
@@ -1107,6 +1111,23 @@ function createProjectData() {
       bgm: bgmReference,
       outputOptions: getOutputOptions()
     },
+    storyboard: {
+      scenes: photos.map((photo, index) => ({
+        photoId: photo.id,
+        order: index,
+        role: photo.storyRole || "",
+        favorite: Boolean(photo.favorite),
+        locked: Boolean(photo.locked),
+        rating: Number(photo.rating || 3),
+        recommended: Boolean(photo.recommended)
+      }))
+    },
+    renderSettings: {
+      encoder: renderEncoderInput?.value || "auto",
+      defaultPhotoDuration: getSecondsPerPhoto(),
+      defaultTransition: defaultTransitionInput.value,
+      outputDirectory: outputDirectoryInput.value || "outputs/"
+    },
     students: students.map(student => ({ ...student })),
     photos: photos.map(serializePhoto)
   };
@@ -1374,23 +1395,104 @@ function downloadProject(data, fileName) {
   URL.revokeObjectURL(url);
 }
 
-function saveProject(options = {}) {
+async function projectApi(path, payload) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw new Error(result.error || "프로젝트 API 요청에 실패했습니다.");
+  return result;
+}
+
+function readLocalRecentProjects() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(recentProjectsKey) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function writeLocalRecentProject(data, fileName, source = "local") {
+  const item = {
+    name: data.project?.name || data.video?.title || "Highlight Studio Project",
+    fileName: fileName.endsWith(".hsp") ? fileName : `${fileName}.hsp`,
+    source,
+    photoCount: Array.isArray(data.photos) ? data.photos.length : 0,
+    studentCount: Array.isArray(data.students) ? data.students.length : 0,
+    modifiedAt: data.project?.modifiedAt || new Date().toISOString(),
+    addedAt: new Date().toISOString()
+  };
+  const recent = readLocalRecentProjects().filter(project => project.fileName !== item.fileName || project.name !== item.name);
+  recent.unshift(item);
+  localStorage.setItem(recentProjectsKey, JSON.stringify(recent.slice(0, 10)));
+  return item;
+}
+
+async function loadRecentProjects() {
+  const localRecent = readLocalRecentProjects();
+  let serverRecent = [];
+  try {
+    const response = await fetch("/api/project/recent");
+    const result = await response.json();
+    if (response.ok && result.ok) serverRecent = result.recent || [];
+  } catch (_) {}
+  renderRecentProjects([...localRecent, ...serverRecent]);
+}
+
+function renderRecentProjects(recent = []) {
+  if (!recentProjectsList) return;
+  const unique = [];
+  const seen = new Set();
+  for (const item of recent) {
+    const key = `${item.name || ""}|${item.fileName || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(item);
+  }
+  if (!unique.length) {
+    recentProjectsList.innerHTML = `<p class="muted-text">최근 프로젝트 기록이 없습니다.</p>`;
+    return;
+  }
+  recentProjectsList.innerHTML = unique.slice(0, 10).map(item => `
+    <div class="recent-project-row">
+      <div>
+        <strong>${escapeHtml(item.name || "Highlight Studio Project")}</strong>
+        <span>${escapeHtml(item.fileName || ".hsp")} / 사진 ${Number(item.photoCount || 0)}장 / ${formatDateTime(item.modifiedAt || item.addedAt)}</span>
+      </div>
+      <button type="button" data-action="open-recent-project">불러오기</button>
+    </div>
+  `).join("");
+}
+
+async function saveProject(options = {}) {
   const data = createProjectData();
   if (options.askName || !currentProjectFileName) {
     const nextName = window.prompt("\ud504\ub85c\uc81d\ud2b8 \ud30c\uc77c\uba85\uc744 \uc785\ub825\ud558\uc138\uc694.", currentProjectFileName || safeFileName(data.project.name));
     if (!nextName) return;
     currentProjectFileName = safeFileName(nextName.replace(/\.hsp$/i, ""));
   }
-  downloadProject(data, currentProjectFileName);
-  localStorage.setItem(autosaveKey, JSON.stringify(data));
-  setProjectStatus(`\uc800\uc7a5\ub428: ${formatDateTime(data.project.modifiedAt)}`);
-  setMessage(".hsp \ud504\ub85c\uc81d\ud2b8 \ud30c\uc77c\uc744 \uc800\uc7a5\ud588\uc2b5\ub2c8\ub2e4. \uc0ac\uc9c4 \uc6d0\ubcf8\uc740 \ud3ec\ud568\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4.");
+  try {
+    const result = await projectApi("/api/project/save", { project: data, fileName: currentProjectFileName });
+    const savedProject = result.project || data;
+    downloadProject(savedProject, result.fileName || currentProjectFileName);
+    localStorage.setItem(autosaveKey, JSON.stringify(savedProject));
+    writeLocalRecentProject(savedProject, result.fileName || currentProjectFileName, "save");
+    loadRecentProjects();
+    setProjectStatus(`\uc800\uc7a5\ub428: ${formatDateTime(savedProject.project.modifiedAt)}`);
+    setMessage(".hsp \ud504\ub85c\uc81d\ud2b8 \ud30c\uc77c\uc744 \uc800\uc7a5\ud588\uc2b5\ub2c8\ub2e4. \uc0ac\uc9c4 \uc6d0\ubcf8\uc740 \ud3ec\ud568\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4.");
+  } catch (error) {
+    setMessage(error.message || "프로젝트 저장에 실패했습니다.");
+  }
 }
 
-function autosaveProject() {
+async function autosaveProject() {
   try {
     const data = createProjectData();
     localStorage.setItem(autosaveKey, JSON.stringify(data));
+    projectApi("/api/project/autosave", { project: data }).catch(() => {});
     setProjectStatus(`\uc790\ub3d9 \uc800\uc7a5: ${formatDateTime(data.project.modifiedAt)}`);
   } catch (error) {
     setProjectStatus("\uc790\ub3d9 \uc800\uc7a5 \uc2e4\ud328");
@@ -1442,12 +1544,16 @@ function newProject() {
 function openProjectFile(file) {
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     try {
       const data = JSON.parse(reader.result);
+      const result = await projectApi("/api/project/load", { project: data, fileName: file.name });
+      const projectData = result.project || data;
       currentProjectFileName = safeFileName(file.name.replace(/\.hsp$/i, ""));
-      restoreProjectData(data);
+      restoreProjectData(projectData);
       localStorage.setItem(autosaveKey, JSON.stringify(createProjectData()));
+      writeLocalRecentProject(projectData, file.name, "load");
+      loadRecentProjects();
       setMessage(".hsp \ud504\ub85c\uc81d\ud2b8\ub97c \ubd88\ub7ec\uc654\uc2b5\ub2c8\ub2e4. \uc6d0\ubcf8 \uc0ac\uc9c4\uc740 \ucc38\uc870 \uc815\ubcf4\ub85c\ub9cc \ubcf5\uc6d0\ub429\ub2c8\ub2e4.");
     } catch (error) {
       setMessage("\ud504\ub85c\uc81d\ud2b8 \ud30c\uc77c\uc744 \ubd88\ub7ec\uc624\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4. .hsp \ud30c\uc77c\uc744 \ud655\uc778\ud558\uc138\uc694.");
@@ -1467,6 +1573,18 @@ function restoreAutosaveIfWanted() {
   } catch (error) {
     localStorage.removeItem(autosaveKey);
   }
+}
+
+async function restoreServerAutosaveIfAvailable() {
+  if (pendingAutosaveData) return;
+  try {
+    const response = await fetch("/api/project/autosave");
+    const result = await response.json();
+    if (!response.ok || !result.ok || !result.project) return;
+    pendingAutosaveData = result.project;
+    restoreBanner.classList.remove("is-hidden");
+    setProjectStatus("최근 작업 복원 가능");
+  } catch (_) {}
 }
 
 function getStudent(studentId) {
@@ -2586,9 +2704,19 @@ newProjectButton.addEventListener("click", newProject);
 openProjectButton.addEventListener("click", () => projectInput.click());
 saveProjectButton.addEventListener("click", () => saveProject());
 saveAsProjectButton.addEventListener("click", () => saveProject({ askName: true }));
+restoreRecentButton.addEventListener("click", () => {
+  recentProjectsPanel.classList.toggle("is-hidden");
+  loadRecentProjects();
+});
 projectInput.addEventListener("change", () => {
   openProjectFile(projectInput.files?.[0]);
   projectInput.value = "";
+});
+recentProjectsList.addEventListener("click", event => {
+  const target = event.target.closest("[data-action='open-recent-project']");
+  if (!target) return;
+  setMessage("브라우저 보안상 최근 파일 경로를 직접 열 수 없습니다. .hsp 파일을 선택해 주세요.");
+  projectInput.click();
 });
 restoreAutosaveButton.addEventListener("click", () => {
   if (!pendingAutosaveData) return;
@@ -2697,4 +2825,6 @@ loadOutputs();
 loadRenderQueue();
 queuePollTimer = setInterval(loadRenderQueue, 2000);
 restoreAutosaveIfWanted();
+restoreServerAutosaveIfAvailable();
+loadRecentProjects();
 setInterval(autosaveProject, 5 * 60 * 1000);
