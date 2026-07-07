@@ -52,6 +52,10 @@ const templateSummary = document.getElementById("templateSummary");
 const templateList = document.getElementById("templateList");
 const openingCaptionInput = document.getElementById("openingCaptionInput");
 const endingCaptionInput = document.getElementById("endingCaptionInput");
+const captionEventInput = document.getElementById("captionEventInput");
+const captionDojangInput = document.getElementById("captionDojangInput");
+const captionToneInput = document.getElementById("captionToneInput");
+const aiCaptionButton = document.getElementById("aiCaptionButton");
 const newProjectButton = document.getElementById("newProjectButton");
 const openProjectButton = document.getElementById("openProjectButton");
 const saveProjectButton = document.getElementById("saveProjectButton");
@@ -238,6 +242,8 @@ let activeFilter = "all";
 let activeAiPhotoFilter = "all";
 let aiStoryboard = null;
 let storyboardGeneratedAt = "";
+let captionTone = "emotional";
+let captionGeneratedAt = "";
 let aiAnalyzeRunning = false;
 let timelineZoom = 100;
 let activeTransitionPhotoId = null;
@@ -1069,6 +1075,9 @@ function createCaption(overrides = {}) {
     position: "bottom",
     style: "shadow",
     timing: "full",
+    aiCaptionGenerated: false,
+    captionTone: "",
+    captionGeneratedAt: "",
     ...overrides
   };
 }
@@ -1134,12 +1143,18 @@ function createProjectData() {
       secondsPerPhoto: getSecondsPerPhoto(),
       openingCaption: openingCaptionInput.value,
       endingCaption: endingCaptionInput.value,
+      captionEvent: captionEventInput?.value || "",
+      captionDojang: captionDojangInput?.value || "",
+      captionTone,
+      captionGeneratedAt,
       bgm: bgmReference,
       outputOptions: getOutputOptions()
     },
     storyboard: {
       aiStoryboard,
       storyboardGeneratedAt,
+      captionTone,
+      captionGeneratedAt,
       scenes: photos.map((photo, index) => ({
         photoId: photo.id,
         order: index,
@@ -1177,6 +1192,11 @@ function restoreProjectData(data) {
   secondsInput.value = String(data.video?.secondsPerPhoto || 2);
   openingCaptionInput.value = data.video?.openingCaption || "";
   endingCaptionInput.value = data.video?.endingCaption || "";
+  if (captionEventInput) captionEventInput.value = data.video?.captionEvent || "";
+  if (captionDojangInput) captionDojangInput.value = data.video?.captionDojang || "";
+  captionTone = data.video?.captionTone || data.storyboard?.captionTone || "emotional";
+  captionGeneratedAt = data.video?.captionGeneratedAt || data.storyboard?.captionGeneratedAt || "";
+  if (captionToneInput) captionToneInput.value = captionTone;
   bgmReference = data.video?.bgm || null;
   bgmName.textContent = bgmReference?.name ? `BGM: ${bgmReference.name}` : "\uc120\ud0dd\ub41c BGM \uc5c6\uc74c";
   const outputOptions = data.video?.outputOptions || {};
@@ -1556,6 +1576,11 @@ function newProject() {
   activeAiPhotoFilter = "all";
   aiStoryboard = null;
   storyboardGeneratedAt = "";
+  captionTone = "emotional";
+  captionGeneratedAt = "";
+  if (captionEventInput) captionEventInput.value = "";
+  if (captionDojangInput) captionDojangInput.value = "";
+  if (captionToneInput) captionToneInput.value = captionTone;
   if (aiPhotoFilter) aiPhotoFilter.value = "all";
   if (aiDuplicateButton) aiDuplicateButton.disabled = false;
   if (selectExcludedButton) selectExcludedButton.disabled = false;
@@ -1802,6 +1827,7 @@ function renderStoryboard() {
             ${photo.locked ? `<em>\uD83D\uDD12 \uc7a0\uae08</em>` : ""}
             ${photo.recommended ? `<em>AI \ucd94\ucc9c</em>` : ""}
             ${photo.sceneSource === "ai" ? `<em>AI \ucd94\ucc9c \uc7a5\uba74</em>` : ""}
+            ${normalizeCaption(photo.caption).aiCaptionGenerated ? `<em>AI \uc790\ub9c9</em>` : ""}
             ${photo.aiExcluded ? `<em>AI \uc81c\uc678</em>` : ""}
             ${photo.aiScore ? `<em>${Math.round(photo.aiScore)}\uc810</em>` : ""}
           </div>
@@ -1987,6 +2013,7 @@ function renderTimeline() {
           <strong>${index + 1}</strong>
           <span>${effectLabel}</span>
           ${photo.sceneSource === "ai" ? `<small>AI \ucd94\ucc9c \uc7a5\uba74</small>` : ""}
+          ${normalizeCaption(photo.caption).aiCaptionGenerated ? `<small>AI \uc790\ub9c9</small>` : ""}
           <em>${Number(photo.durationSeconds || getSecondsPerPhoto())}\ucd08</em>
         </button>
         ${transitionBlock}
@@ -2708,6 +2735,100 @@ function runAiStoryboardBuilder() {
   setMessage("AI \uc2a4\ud1a0\ub9ac\ubcf4\ub4dc\uac00 \uc0dd\uc131\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \ud544\uc694\ud558\uba74 \ud0c0\uc784\ub77c\uc778\uc5d0\uc11c \uc21c\uc11c, \uc790\ub9c9, \ud6a8\uacfc\ub97c \uc9c1\uc811 \uc218\uc815\ud558\uc138\uc694.");
 }
 
+const aiCaptionRules = {
+  emotional: {
+    intro: ["\uc624\ub298\uc758 \uba4b\uc9c4 \uc21c\uac04\uc744 \ub2f4\uc558\uc2b5\ub2c8\ub2e4.", "\ud568\uaed8 \uc131\uc7a5\ud558\ub294 \uc6b0\ub9ac \uc544\uc774\ub4e4\uc758 \uc774\uc57c\uae30"],
+    body: ["\ud3ec\uae30\ud558\uc9c0 \uc54a\ub294 \ub9c8\uc74c", "\ub540 \ud758\ub9b0 \ub9cc\ud07c \uc790\ub77c\ub294 \uc790\uc2e0\uac10", "\ud55c \uac78\uc74c\uc529 \ub354 \uba4b\uc9c0\uac8c", "\uce5c\uad6c\ub4e4\uacfc \ud568\uaed8\ud558\ub294 \uc990\uac70\uc6b4 \uc2dc\uac04"],
+    ending: ["\uc624\ub298\ub3c4 \ud55c \ubf38 \ub354 \uc131\uc7a5\ud588\uc2b5\ub2c8\ub2e4.",
+      "\ub2e4\uc74c \uc2dc\uac04\uc774 \ub354 \uae30\ub300\ub429\ub2c8\ub2e4.", "\ud568\uaed8\ud574 \uc8fc\uc154\uc11c \uac10\uc0ac\ud569\ub2c8\ub2e4."]
+  },
+  exciting: {
+    intro: ["\uc624\ub298\uc758 \uc5d0\ub108\uc9c0\ub97c \uc601\uc0c1\uc73c\ub85c \ub2f4\uc558\uc2b5\ub2c8\ub2e4.", "\uc2e0\ub098\ub294 \uc21c\uac04, \uc9c0\uae08 \uc2dc\uc791\ud569\ub2c8\ub2e4!"],
+    body: ["\ud798\ucc28\uac8c \ub6f0\uc5b4\uc624\ub974\ub294 \uc21c\uac04", "\uc6b0\ub9ac\uc758 \uc5f4\uc815\uc774 \ube5b\ub098\ub294 \uc2dc\uac04", "\ub354 \ud06c\uac8c, \ub354 \uc2e0\ub098\uac8c", "\ud568\uaed8\ub77c\uc11c \ub354 \uc990\uac81\uc2b5\ub2c8\ub2e4"],
+    ending: ["\uc624\ub298\uc758 \uc5f4\uae30\ub97c \uae30\uc5b5\ud569\ub2c8\ub2e4.", "\ub2e4\uc74c \uc2dc\uac04\uc5d0 \ub610 \ub9cc\ub098\uc694!", "\ud568\uaed8\ud574 \uc8fc\uc154\uc11c \uac10\uc0ac\ud569\ub2c8\ub2e4."]
+  },
+  growth: {
+    intro: ["\ud55c \uac78\uc74c\uc529 \uc131\uc7a5\ud558\ub294 \uc6b0\ub9ac\uc758 \uc774\uc57c\uae30", "\uc624\ub298\uc758 \ub178\ub825\uc774 \ub0b4\uc77c\uc758 \uc790\uc2e0\uac10\uc774 \ub429\ub2c8\ub2e4."],
+    body: ["\ud3ec\uae30\ud558\uc9c0 \uc54a\ub294 \ub9c8\uc74c", "\ud55c \uac78\uc74c\uc529 \ub354 \uba4b\uc9c0\uac8c", "\uc5f0\uc2b5\uc774 \ub9cc\ub4dc\ub294 \uc790\uc2e0\uac10", "\uc624\ub298\ub3c4 \uc870\uae08 \ub354 \uc790\ub790\uc2b5\ub2c8\ub2e4"],
+    ending: ["\uc624\ub298\ub3c4 \ud55c \ubf38 \ub354 \uc131\uc7a5\ud588\uc2b5\ub2c8\ub2e4.", "\ub2e4\uc74c \uc2dc\uac04\uc774 \ub354 \uae30\ub300\ub429\ub2c8\ub2e4.", "\ub178\ub825\ud55c \ubaa8\ub4e0 \uc21c\uac04\uc744 \uc751\uc6d0\ud569\ub2c8\ub2e4."]
+  },
+  demo: {
+    intro: ["\uba4b\uc9c4 \uc2dc\ubc94\uc758 \uc21c\uac04\uc744 \ub2f4\uc558\uc2b5\ub2c8\ub2e4.", "\uc808\ub3c4 \uc788\ub294 \ub3d9\uc791, \ube5b\ub098\ub294 \ud300\uc6cc\ud06c"],
+    body: ["\uc9d1\uc911\ub825\uc774 \ube5b\ub098\ub294 \uc21c\uac04", "\uc815\ud655\ud55c \ub3d9\uc791\uc774 \ub9cc\ub4dc\ub294 \uba4b\uc9d0", "\ud300\uc6cc\ud06c\ub85c \uc644\uc131\ud55c \ud558\uc774\ub77c\uc774\ud2b8", "\ud558\ub098\ub41c \ub9c8\uc74c\uc73c\ub85c \ub354 \uac15\ud558\uac8c"],
+    ending: ["\uba4b\uc9c4 \uc2dc\ubc94\uc5d0 \ud070 \ubc15\uc218\ub97c \ubcf4\ub0c5\ub2c8\ub2e4.", "\ub2e4\uc74c \ubb34\ub300\uac00 \ub354 \uae30\ub300\ub429\ub2c8\ub2e4.", "\ud568\uaed8\ud574 \uc8fc\uc154\uc11c \uac10\uc0ac\ud569\ub2c8\ub2e4."]
+  },
+  training: {
+    intro: ["\uc624\ub298\uc758 \uc218\ub828 \uc21c\uac04\uc744 \uae30\ub85d\ud569\ub2c8\ub2e4.", "\ub540\uacfc \uc9d1\uc911\uc73c\ub85c \ub9cc\ub4e0 \uc131\uc7a5\uc758 \uc2dc\uac04"],
+    body: ["\uae30\ubcf8\uc744 \ud0c4\ud0c4\ud558\uac8c", "\ub540 \ud758\ub9b0 \ub9cc\ud07c \uc790\ub77c\ub294 \uc790\uc2e0\uac10", "\ubc18\ubcf5\ud560\uc218\ub85d \ub354 \ub2e8\ub2e8\ud574\uc9d1\ub2c8\ub2e4", "\uc9c0\uae08\uc758 \ub178\ub825\uc774 \uc2e4\ub825\uc774 \ub429\ub2c8\ub2e4"],
+    ending: ["\uc624\ub298\ub3c4 \uc218\uace0\ud588\uc2b5\ub2c8\ub2e4.", "\ub2e4\uc74c \uc218\ub828\uc774 \ub354 \uae30\ub300\ub429\ub2c8\ub2e4.", "\ud568\uaed8\ud574 \uc8fc\uc154\uc11c \uac10\uc0ac\ud569\ub2c8\ub2e4."]
+  },
+  kids: {
+    intro: ["\uc544\uc774\ub4e4\uc758 \uc990\uac70\uc6b4 \uc6c0\uc9c1\uc784\uc744 \ub2f4\uc558\uc2b5\ub2c8\ub2e4.", "\uc6c3\uc74c\uacfc \ud65c\uae30\uac00 \uac00\ub4dd\ud55c \uc2dc\uac04"],
+    body: ["\uce5c\uad6c\ub4e4\uacfc \ud568\uaed8\ud558\ub294 \uc990\uac70\uc6b4 \uc2dc\uac04", "\uc2e0\ub098\uac8c \uc6c0\uc9c1\uc774\uba70 \uc790\ub77c\ub098\uc694", "\ud55c \uac78\uc74c\uc529 \uc6a9\uae30 \uc788\uac8c", "\uc624\ub298\ub3c4 \ud65c\uc9dd \uc6c3\uc5c8\uc2b5\ub2c8\ub2e4"],
+    ending: ["\uc624\ub298\ub3c4 \ud55c \ubf38 \ub354 \uc131\uc7a5\ud588\uc2b5\ub2c8\ub2e4.", "\ub2e4\uc74c \uc2dc\uac04\uc774 \ub354 \uae30\ub300\ub429\ub2c8\ub2e4.", "\ud568\uaed8\ud574 \uc8fc\uc154\uc11c \uac10\uc0ac\ud569\ub2c8\ub2e4."]
+  }
+};
+
+function buildCaptionPrefix() {
+  const title = titleInput.value.trim();
+  const eventName = captionEventInput?.value.trim() || "";
+  const dojangName = captionDojangInput?.value.trim() || "";
+  return [dojangName, eventName, title].filter(Boolean).join(" · ");
+}
+
+function composeSceneCaption(photo, index, total, toneRules, prefix) {
+  const role = photo.storyRole || (index === 0 ? "intro" : index === total - 1 ? "ending" : "main");
+  if (role === "intro" || index === 0) return prefix ? `${prefix}\n${toneRules.intro[index % toneRules.intro.length]}` : toneRules.intro[index % toneRules.intro.length];
+  if (role === "ending" || index === total - 1) return toneRules.ending[index % toneRules.ending.length];
+  return toneRules.body[index % toneRules.body.length];
+}
+
+function runAiCaptionBuilder() {
+  if (!photos.length) {
+    setMessage("\uc790\ub9c9\uc744 \ub123\uc744 \uc0ac\uc9c4\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.");
+    return;
+  }
+  const hasExistingCaptions = openingCaptionInput.value.trim() || endingCaptionInput.value.trim() || photos.some(photo => normalizeCaption(photo.caption).text.trim());
+  if (hasExistingCaptions && !window.confirm("\uae30\uc874 \uc790\ub9c9\uc744 AI \uc790\ub9c9\uc73c\ub85c \uad50\uccb4\ud560\uae4c\uc694?")) return;
+  captionTone = captionToneInput?.value || "emotional";
+  captionGeneratedAt = new Date().toISOString();
+  const toneRules = aiCaptionRules[captionTone] || aiCaptionRules.emotional;
+  const prefix = buildCaptionPrefix();
+  openingCaptionInput.value = prefix ? `${prefix}\n${toneRules.intro[0]}` : toneRules.intro[0];
+  endingCaptionInput.value = toneRules.ending[0];
+  const targetPhotos = photos.filter(photo => photo.sceneSource === "ai" || photo.recommended || photo.selected);
+  const captionTargets = targetPhotos.length ? targetPhotos : photos;
+  captionTargets.forEach((photo, index) => {
+    photo.caption = {
+      ...normalizeCaption(photo.caption),
+      text: composeSceneCaption(photo, index, captionTargets.length, toneRules, prefix),
+      position: "bottom",
+      style: "shadow",
+      timing: "full",
+      aiCaptionGenerated: true,
+      captionTone,
+      captionGeneratedAt
+    };
+  });
+  if (aiStoryboard) {
+    aiStoryboard = {
+      ...aiStoryboard,
+      captionTone,
+      captionGeneratedAt,
+      scenes: (aiStoryboard.scenes || []).map(scene => {
+        if (scene.type === "opening") return { ...scene, caption: openingCaptionInput.value };
+        if (scene.type === "ending" && !scene.photoId) return { ...scene, caption: endingCaptionInput.value };
+        const photo = photos.find(item => item.id === scene.photoId);
+        return photo ? { ...scene, caption: normalizeCaption(photo.caption).text, aiCaptionGenerated: true } : scene;
+      })
+    };
+  }
+  renderList();
+  renderOutputEstimate();
+  autosaveProject();
+  setMessage("AI \uc790\ub9c9\uc744 \uc0dd\uc131\ud588\uc2b5\ub2c8\ub2e4. \uae30\uc874 \uc790\ub9c9 \ud3b8\uc9d1 UI\uc5d0\uc11c \uc9c1\uc811 \uc218\uc815\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.");
+}
+
 async function runAiAutoEdit() {
   if (!photos.length) {
     setMessage("\uc790\ub3d9 \ud3b8\uc9d1\ud560 \uc0ac\uc9c4\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.");
@@ -2903,9 +3024,11 @@ function updatePhotoDuration(photoId, value) {
 function updatePhotoCaption(photoId, key, value, options = {}) {
   const photo = photos.find(item => item.id === photoId);
   if (!photo) return;
+  const manualCaptionUpdate = key === "text" && options.ai !== true;
   photo.caption = {
     ...normalizeCaption(photo.caption),
-    [key]: value
+    [key]: value,
+    ...(manualCaptionUpdate ? { aiCaptionGenerated: false } : {})
   };
   activePreviewId = photoId;
   if (options.render === false) {
@@ -3151,6 +3274,7 @@ if (aiPhotoFilter) aiPhotoFilter.addEventListener("change", () => {
 });
 aiAutoEditButton.addEventListener("click", runAiAutoEdit);
 if (aiStoryboardButton) aiStoryboardButton.addEventListener("click", runAiStoryboardBuilder);
+if (aiCaptionButton) aiCaptionButton.addEventListener("click", runAiCaptionBuilder);
 aiRecommendButton.addEventListener("click", applyAiRecommendation);
 
 photoList.addEventListener("dragstart", event => {

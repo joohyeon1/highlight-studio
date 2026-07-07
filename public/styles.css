@@ -929,6 +929,20 @@ textarea {
 .caption-grid textarea {
   margin-top: 8px;
 }
+.ai-caption-tools {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 14px;
+}
+.ai-caption-tools label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
 .recommendation-summary {
   margin-bottom: 14px;
   padding: 12px 14px;
@@ -1559,7 +1573,7 @@ textarea {
 }
 
 @media (max-width: 980px) {
-  .studio-grid, .photo-workspace, .option-grid, .caption-grid, .caption-property-grid, .stats-grid, .tagging-grid, .preset-row, .output-layout, .output-form, .custom-resolution, .output-manager-grid, .account-grid, .encoder-status, .template-manager-grid { grid-template-columns: 1fr; }
+  .studio-grid, .photo-workspace, .option-grid, .caption-grid, .ai-caption-tools, .caption-property-grid, .stats-grid, .tagging-grid, .preset-row, .output-layout, .output-form, .custom-resolution, .output-manager-grid, .account-grid, .encoder-status, .template-manager-grid { grid-template-columns: 1fr; }
   .preview-panel { position: static; }
 }
 
