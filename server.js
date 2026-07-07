@@ -1521,6 +1521,23 @@ app.post("/api/render/cancel/:jobId", (req, res) => {
   res.json({ ok: true, job: publicJob(job) });
 });
 
+function cancelAllRenderJobs(reason = "프로그램 종료") {
+  for (const job of renderJobs.values()) {
+    if (["completed", "failed", "canceled"].includes(job.status)) continue;
+    job.canceled = true;
+    pushJobLog(job, reason);
+    updateJob(job, { status: "canceled", completedAt: new Date().toISOString() });
+    if (job.currentProcess) {
+      try {
+        job.currentProcess.kill("SIGTERM");
+      } catch (_) {}
+    }
+    for (const file of job.files || []) fs.rm(file.path, { force: true }, () => {});
+  }
+  renderQueue.splice(0);
+  activeRenderJobId = null;
+}
+
 app.use((error, _req, res, _next) => {
   res.status(400).json({ ok: false, error: error.message || "요청을 처리하지 못했습니다." });
 });
@@ -1540,6 +1557,7 @@ if (require.main === module) {
 module.exports = {
   app,
   startServer,
+  cancelAllRenderJobs,
   PORT,
   UPLOAD_DIR,
   OUTPUT_DIR

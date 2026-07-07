@@ -983,6 +983,7 @@ function handleDesktopCommand(command) {
   if (command === "new-project") newProject();
   if (command === "open-project") projectInput.click();
   if (command === "save-project") saveProject();
+  if (command === "save-as-project") saveProject({ askName: true });
 }
 
 function createPhotoPlaceholder(photo) {

@@ -8,7 +8,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "electron": "electron .",
     "desktop": "electron .",
+    "build": "electron-builder --win nsis",
     "dist": "electron-builder --win nsis",
     "pack": "electron-builder --dir",
     "check": "node --check server.js && node --check public/app.js && node --check desktop/main.js && node --check desktop/preload.js"
