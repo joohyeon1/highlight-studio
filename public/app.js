@@ -79,6 +79,7 @@ const outputDirectoryInput = document.getElementById("outputDirectoryInput");
 const outputEstimateList = document.getElementById("outputEstimateList");
 const aiRecommendButton = document.getElementById("aiRecommendButton");
 const aiAutoEditButton = document.getElementById("aiAutoEditButton");
+const aiStoryboardButton = document.getElementById("aiStoryboardButton");
 const aiCaptionModeInput = document.getElementById("aiCaptionModeInput");
 const recommendationSummary = document.getElementById("recommendationSummary");
 const aiAnalysisList = document.getElementById("aiAnalysisList");
@@ -235,6 +236,8 @@ let draggedTimelinePhotoId = null;
 let draggedStoryboardPhotoId = null;
 let activeFilter = "all";
 let activeAiPhotoFilter = "all";
+let aiStoryboard = null;
+let storyboardGeneratedAt = "";
 let aiAnalyzeRunning = false;
 let timelineZoom = 100;
 let activeTransitionPhotoId = null;
@@ -1106,7 +1109,8 @@ function serializePhoto(photo, index) {
     aiDuplicate: photo.aiDuplicate || null,
     duplicateGroupId: photo.duplicateGroupId || "",
     representative: Boolean(photo.representative),
-    storyRole: photo.storyRole || ""
+    storyRole: photo.storyRole || "",
+    sceneSource: photo.sceneSource || ""
   };
 }
 
@@ -1134,10 +1138,13 @@ function createProjectData() {
       outputOptions: getOutputOptions()
     },
     storyboard: {
+      aiStoryboard,
+      storyboardGeneratedAt,
       scenes: photos.map((photo, index) => ({
         photoId: photo.id,
         order: index,
         role: photo.storyRole || "",
+        sceneSource: photo.sceneSource || "",
         favorite: Boolean(photo.favorite),
         locked: Boolean(photo.locked),
         rating: Number(photo.rating || 3),
@@ -1235,9 +1242,12 @@ function restoreProjectData(data) {
         aiDuplicate: photo.aiDuplicate || null,
         duplicateGroupId: photo.duplicateGroupId || "",
         representative: Boolean(photo.representative),
-        storyRole: photo.storyRole || ""
+        storyRole: photo.storyRole || "",
+        sceneSource: photo.sceneSource || ""
       };
     });
+  aiStoryboard = data.storyboard?.aiStoryboard || null;
+  storyboardGeneratedAt = data.storyboard?.storyboardGeneratedAt || "";
   selectedPhotoIds = new Set(photos.filter(photo => photo.selected).map(photo => photo.id));
   activePreviewId = photos[0]?.id || null;
   activeFilter = "all";
@@ -1544,6 +1554,8 @@ function newProject() {
   activePreviewId = null;
   activeFilter = "all";
   activeAiPhotoFilter = "all";
+  aiStoryboard = null;
+  storyboardGeneratedAt = "";
   if (aiPhotoFilter) aiPhotoFilter.value = "all";
   if (aiDuplicateButton) aiDuplicateButton.disabled = false;
   if (selectExcludedButton) selectExcludedButton.disabled = false;
@@ -1789,6 +1801,7 @@ function renderStoryboard() {
             ${photo.favorite ? `<em>\u2605 \uc990\uaca8\ucc3e\uae30</em>` : ""}
             ${photo.locked ? `<em>\uD83D\uDD12 \uc7a0\uae08</em>` : ""}
             ${photo.recommended ? `<em>AI \ucd94\ucc9c</em>` : ""}
+            ${photo.sceneSource === "ai" ? `<em>AI \ucd94\ucc9c \uc7a5\uba74</em>` : ""}
             ${photo.aiExcluded ? `<em>AI \uc81c\uc678</em>` : ""}
             ${photo.aiScore ? `<em>${Math.round(photo.aiScore)}\uc810</em>` : ""}
           </div>
@@ -1973,6 +1986,7 @@ function renderTimeline() {
           <img src="${getPhotoUrl(photo)}" alt="">
           <strong>${index + 1}</strong>
           <span>${effectLabel}</span>
+          ${photo.sceneSource === "ai" ? `<small>AI \ucd94\ucc9c \uc7a5\uba74</small>` : ""}
           <em>${Number(photo.durationSeconds || getSecondsPerPhoto())}\ucd08</em>
         </button>
         ${transitionBlock}
@@ -2089,6 +2103,7 @@ async function addFiles(fileList) {
       duplicateGroupId: "",
       representative: false,
       storyRole: "",
+      sceneSource: "",
       transitionAfter: createTransition(defaultTransition, 0.5)
     };
   }));
@@ -2546,6 +2561,153 @@ function applyStoryboard(storyboard) {
   if (ending?.caption) endingCaptionInput.value = ending.caption;
 }
 
+function getPhotoStoryboardScore(photo) {
+  const analysis = photo.aiAnalysis || {};
+  const quality = photo.aiQuality || {};
+  const score = Number(quality.score ?? photo.aiScore ?? analysis.score ?? 50);
+  const resolutionScore = Math.min(100, ((Number(photo.width || analysis.width || 0) * Number(photo.height || analysis.height || 0)) / 2073600) * 100);
+  const sharpnessScore = Number(analysis.sharpness || 50);
+  const brightness = Number(analysis.brightness || 50);
+  const brightnessScore = Math.max(0, 100 - Math.abs(55 - brightness) * 2);
+  const favoriteBonus = photo.favorite ? 8 : 0;
+  const ratingBonus = (Number(photo.rating || 3) - 3) * 3;
+  return (score * 0.45) + (resolutionScore * 0.2) + (sharpnessScore * 0.2) + (brightnessScore * 0.15) + favoriteBonus + ratingBonus;
+}
+
+function getPhotoCapturedTime(photo) {
+  const capturedAt = photo.aiAnalysis?.capturedAt || photo.file?.lastModified || photo.lastModified || 0;
+  const time = capturedAt ? new Date(capturedAt).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function isAiStoryboardEligible(photo) {
+  if (photo.excludeRecommended || photo.aiQuality?.excludeRecommended || photo.aiQuality?.grade === "exclude") return false;
+  if (photo.aiDuplicate?.isDuplicateCandidate && !photo.representative) return false;
+  return true;
+}
+
+function createLocalAiStoryboard() {
+  const eligible = photos
+    .filter(isAiStoryboardEligible)
+    .map((photo, index) => ({
+      photo,
+      originalIndex: index,
+      score: getPhotoStoryboardScore(photo),
+      capturedAt: getPhotoCapturedTime(photo)
+    }))
+    .sort((a, b) => (b.score - a.score) || ((b.photo.width * b.photo.height) - (a.photo.width * a.photo.height)) || (a.originalIndex - b.originalIndex));
+
+  if (!eligible.length) return null;
+
+  const introCount = Math.min(2, eligible.length);
+  const intro = eligible.slice(0, introCount);
+  const ending = eligible.find(item => !intro.some(introItem => introItem.photo.id === item.photo.id)) || intro[intro.length - 1];
+  const usedIds = new Set([...intro.map(item => item.photo.id), ending.photo.id]);
+  const body = eligible
+    .filter(item => !usedIds.has(item.photo.id))
+    .sort((a, b) => {
+      if (a.capturedAt && b.capturedAt) return a.capturedAt - b.capturedAt;
+      if (a.capturedAt !== b.capturedAt) return b.capturedAt - a.capturedAt;
+      return (b.score - a.score) || (a.originalIndex - b.originalIndex);
+    });
+  const ordered = [...intro, ...body, ending].filter((item, index, list) => list.findIndex(other => other.photo.id === item.photo.id) === index);
+  const generatedAt = new Date().toISOString();
+  return {
+    source: "local-rule-ai",
+    generatedAt,
+    selectedPhotoIds: ordered.map(item => item.photo.id),
+    excludedPhotoIds: photos.filter(photo => !ordered.some(item => item.photo.id === photo.id)).map(photo => photo.id),
+    scenes: [
+      {
+        type: "opening",
+        caption: openingCaptionInput.value || "\ud0dc\uad8c\ub3c4 \ud558\uc774\ub77c\uc774\ud2b8"
+      },
+      ...ordered.map((item, index) => ({
+        type: index < intro.length ? "intro" : index === ordered.length - 1 ? "ending" : "main",
+        photoId: item.photo.id,
+        duration: 3,
+        transitionAfter: createTransition(index % 3 === 1 ? "crossfade" : "fade", 0.5),
+        photoEffect: index % 2 === 0 ? "slowZoomIn" : "slowZoomOut",
+        caption: "",
+        sceneSource: "ai",
+        score: Math.round(item.score)
+      })),
+      {
+        type: "ending",
+        caption: endingCaptionInput.value || "\ud568\uaed8\ud55c \uc21c\uac04\uc744 \uae30\uc5b5\ud569\ub2c8\ub2e4"
+      }
+    ]
+  };
+}
+
+function applyLocalAiStoryboard(storyboard) {
+  const selectedIds = new Set(storyboard.selectedPhotoIds || []);
+  const sceneByPhotoId = new Map((storyboard.scenes || []).filter(scene => scene.photoId).map(scene => [scene.photoId, scene]));
+  const selected = (storyboard.selectedPhotoIds || [])
+    .map(id => photos.find(photo => photo.id === id))
+    .filter(Boolean)
+    .map(photo => {
+      const scene = sceneByPhotoId.get(photo.id);
+      return {
+        ...photo,
+        selected: true,
+        recommended: true,
+        aiExcluded: false,
+        storyRole: scene?.type || "main",
+        sceneSource: "ai",
+        durationSeconds: 3,
+        duration: 3,
+        photoEffect: scene?.photoEffect || "slowZoomIn",
+        caption: {
+          ...normalizeCaption(photo.caption),
+          text: normalizeCaption(photo.caption).text || scene?.caption || "",
+          position: "bottom",
+          style: "shadow",
+          timing: "full"
+        },
+        transitionAfter: scene?.transitionAfter || createTransition("fade", 0.5)
+      };
+    });
+  const excluded = photos
+    .filter(photo => !selectedIds.has(photo.id))
+    .map(photo => ({
+      ...photo,
+      selected: false,
+      recommended: false,
+      sceneSource: "",
+      storyRole: photo.storyRole || ""
+    }));
+  photos = [...selected, ...excluded];
+  normalizeLastTransition();
+  selectedPhotoIds = new Set(selected.map(photo => photo.id));
+  const opening = storyboard.scenes?.find(scene => scene.type === "opening");
+  const ending = storyboard.scenes?.find(scene => scene.type === "ending");
+  if (opening?.caption) openingCaptionInput.value = opening.caption;
+  if (ending?.caption) endingCaptionInput.value = ending.caption;
+  aiStoryboard = storyboard;
+  storyboardGeneratedAt = storyboard.generatedAt || new Date().toISOString();
+  activePreviewId = selected[0]?.id || photos[0]?.id || null;
+}
+
+function runAiStoryboardBuilder() {
+  if (!photos.length) {
+    setMessage("\uc2a4\ud1a0\ub9ac\ubcf4\ub4dc\ub97c \ub9cc\ub4e4 \uc0ac\uc9c4\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.");
+    return;
+  }
+  const hasExistingTimeline = photos.length > 1 || photos.some(photo => photo.sceneSource || photo.storyRole || photo.recommended || normalizeCaption(photo.caption).text.trim());
+  if (hasExistingTimeline && !window.confirm("\uae30\uc874 \ud0c0\uc784\ub77c\uc778\uc744 AI \uc2a4\ud1a0\ub9ac\ubcf4\ub4dc\ub85c \uad50\uccb4\ud560\uae4c\uc694?")) return;
+  const storyboard = createLocalAiStoryboard();
+  if (!storyboard) {
+    setMessage("\uc81c\uc678 \ucd94\ucc9c\uc744 \uc81c\uc678\ud558\uba74 \uc0ac\uc6a9\ud560 \uc0ac\uc9c4\uc774 \uc5c6\uc2b5\ub2c8\ub2e4. AI \ubd84\uc11d \uacb0\uacfc\ub97c \ud655\uc778\ud574\uc8fc\uc138\uc694.");
+    return;
+  }
+  applyLocalAiStoryboard(storyboard);
+  renderList();
+  autosaveProject();
+  recommendationSummary.textContent = `AI \uc2a4\ud1a0\ub9ac\ubcf4\ub4dc \uc0dd\uc131: ${storyboard.selectedPhotoIds.length}\uc7a5 \uc0ac\uc6a9, ${storyboard.excludedPhotoIds.length}\uc7a5 \uc81c\uc678 \uc720\uc9c0.`;
+  setMessage("AI \uc2a4\ud1a0\ub9ac\ubcf4\ub4dc\uac00 \uc0dd\uc131\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \ud544\uc694\ud558\uba74 \ud0c0\uc784\ub77c\uc778\uc5d0\uc11c \uc21c\uc11c, \uc790\ub9c9, \ud6a8\uacfc\ub97c \uc9c1\uc811 \uc218\uc815\ud558\uc138\uc694.");
+}
+
 async function runAiAutoEdit() {
   if (!photos.length) {
     setMessage("\uc790\ub3d9 \ud3b8\uc9d1\ud560 \uc0ac\uc9c4\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.");
@@ -2988,6 +3150,7 @@ if (aiPhotoFilter) aiPhotoFilter.addEventListener("change", () => {
   renderList();
 });
 aiAutoEditButton.addEventListener("click", runAiAutoEdit);
+if (aiStoryboardButton) aiStoryboardButton.addEventListener("click", runAiStoryboardBuilder);
 aiRecommendButton.addEventListener("click", applyAiRecommendation);
 
 photoList.addEventListener("dragstart", event => {
