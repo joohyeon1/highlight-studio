@@ -2812,6 +2812,64 @@ function getPhotoCapturedTime(photo) {
   return Number.isFinite(time) ? time : 0;
 }
 
+function getPhotoSortName(photo) {
+  return String(photo.file?.name || photo.fileName || photo.referencePath || "").toLocaleLowerCase();
+}
+
+function comparePhotosForAiOrder(a, b) {
+  const timeA = getPhotoCapturedTime(a.photo);
+  const timeB = getPhotoCapturedTime(b.photo);
+  if (timeA && timeB && timeA !== timeB) return timeA - timeB;
+  if (timeA !== timeB) return timeA ? -1 : 1;
+  const nameCompare = getPhotoSortName(a.photo).localeCompare(getPhotoSortName(b.photo), "ko", { numeric: true, sensitivity: "base" });
+  return nameCompare || (a.originalIndex - b.originalIndex);
+}
+
+function pickEvenlyDistributedScenes(items, maxScenes) {
+  if (!Number.isFinite(maxScenes) || items.length <= maxScenes) return items;
+  if (maxScenes <= 1) return items.slice(0, 1);
+  const result = [];
+  const lastIndex = items.length - 1;
+  for (let index = 0; index < maxScenes; index += 1) {
+    const sourceIndex = Math.round((index / (maxScenes - 1)) * lastIndex);
+    const item = items[sourceIndex];
+    if (item && !result.some(existing => existing.photo.id === item.photo.id)) result.push(item);
+  }
+  return result;
+}
+
+function calculateAutoSceneDuration(sceneCount, baseDuration = 3) {
+  if (sceneCount <= 10) return Math.max(4, Math.min(5, Number(baseDuration || 4.5)));
+  if (sceneCount <= 20) return Math.max(3, Math.min(4, Number(baseDuration || 3.5)));
+  if (sceneCount >= 50) return Math.max(2, Math.min(3, 150 / sceneCount));
+  return Math.max(2.5, Math.min(3.5, 150 / sceneCount));
+}
+
+function getAutoTransitionType(index) {
+  return ["fade", "slideLeft", "zoomIn", "push", "dissolve", "crossfade"][index % 6];
+}
+
+function getAutoKenBurnsEffect(index, fallback = "kenburns") {
+  const presetEffect = normalizePresetEffect(fallback);
+  if (presetEffect !== "slowZoomIn") return presetEffect;
+  return ["slowZoomIn", "slowZoomOut", "panLeft", "panRight"][index % 4];
+}
+
+function composeAutoStoryboardCaption(index, total, preset) {
+  const base = [
+    "\uc624\ub298\uc758 \uc218\uc5c5",
+    "\uc990\uac70\uc6b4 \ud6c8\ub828 \uc2dc\uac04",
+    "\ud55c \ub2e8\uacc4 \uc131\uc7a5\ud558\ub294 \uc21c\uac04",
+    "\uba4b\uc9c4 \ub3c4\uc804",
+    "\ud568\uaed8\ud55c \uc18c\uc911\ud55c \uc2dc\uac04",
+    "\uc624\ub298\ub3c4 \ucd5c\uace0\uc600\uc2b5\ub2c8\ub2e4"
+  ];
+  if (index === 0) return preset.introText || base[0];
+  if (index === total - 1) return preset.endingText || base[base.length - 1];
+  if (preset.defaultCaption && index % 3 === 0) return preset.defaultCaption;
+  return base[index % base.length];
+}
+
 function getAiTemplatePreset(templateId = selectedTemplate) {
   return aiTemplatePresets.find(preset => preset.id === templateId) || aiTemplatePresets[0];
 }
@@ -2867,7 +2925,7 @@ function isAiStoryboardEligible(photo, options = {}) {
 function createLocalAiStoryboard(options = {}) {
   const preset = getAiTemplatePreset(options.templateId || selectedTemplate);
   const recommendation = getTemplateRecommendation(preset);
-  const lengthLimits = { short: 8, normal: 16, long: Infinity };
+  const lengthLimits = { short: 20, normal: 50, long: 90 };
   const maxScenes = lengthLimits[options.length || "normal"] || lengthLimits.normal;
   const eligible = photos
     .filter(photo => isAiStoryboardEligible(photo, options))
@@ -2877,26 +2935,12 @@ function createLocalAiStoryboard(options = {}) {
       score: getPhotoStoryboardScore(photo),
       capturedAt: getPhotoCapturedTime(photo)
     }))
-    .sort((a, b) => (b.score - a.score) || ((b.photo.width * b.photo.height) - (a.photo.width * a.photo.height)) || (a.originalIndex - b.originalIndex));
+    .sort(comparePhotosForAiOrder);
 
   if (!eligible.length) return null;
 
-  const introCount = Math.min(2, eligible.length);
-  const intro = eligible.slice(0, introCount);
-  const ending = eligible.find(item => !intro.some(introItem => introItem.photo.id === item.photo.id)) || intro[intro.length - 1];
-  const usedIds = new Set([...intro.map(item => item.photo.id), ending.photo.id]);
-  const body = eligible
-    .filter(item => !usedIds.has(item.photo.id))
-    .sort((a, b) => {
-      if (a.capturedAt && b.capturedAt) return a.capturedAt - b.capturedAt;
-      if (a.capturedAt !== b.capturedAt) return b.capturedAt - a.capturedAt;
-      return (b.score - a.score) || (a.originalIndex - b.originalIndex);
-    });
-  const uniqueOrdered = [...intro, ...body, ending].filter((item, index, list) => list.findIndex(other => other.photo.id === item.photo.id) === index);
-  const ordered = Number.isFinite(maxScenes) && uniqueOrdered.length > maxScenes
-    ? [...uniqueOrdered.slice(0, Math.max(1, maxScenes - 1)), uniqueOrdered[uniqueOrdered.length - 1]]
-      .filter((item, index, list) => list.findIndex(other => other.photo.id === item.photo.id) === index)
-    : uniqueOrdered;
+  const ordered = pickEvenlyDistributedScenes(eligible, maxScenes);
+  const sceneDuration = calculateAutoSceneDuration(ordered.length, preset.defaultDuration);
   const generatedAt = new Date().toISOString();
   return {
     source: "local-rule-ai",
@@ -2918,12 +2962,12 @@ function createLocalAiStoryboard(options = {}) {
         endingStyle: recommendation.endingStyle
       },
       ...ordered.map((item, index) => ({
-        type: index < intro.length ? "intro" : index === ordered.length - 1 ? "ending" : "main",
+        type: index === 0 ? "intro" : index === ordered.length - 1 ? "ending" : "main",
         photoId: item.photo.id,
-        duration: Number(preset.defaultDuration || 3),
-        transitionAfter: createTransition(preset.defaultTransition || "fade", 0.5),
-        photoEffect: normalizePresetEffect(preset.defaultEffect),
-        caption: preset.defaultCaption || "",
+        duration: sceneDuration,
+        transitionAfter: createTransition(index === 0 ? preset.defaultTransition || "fade" : getAutoTransitionType(index), 0.5),
+        photoEffect: getAutoKenBurnsEffect(index, preset.defaultEffect),
+        caption: composeAutoStoryboardCaption(index, ordered.length, preset),
         templateId: preset.id,
         captionTone: recommendation.captionTone,
         captionStyle: recommendation.captionStyle,
@@ -2964,8 +3008,8 @@ function applyLocalAiStoryboard(storyboard) {
         aiExcluded: false,
         storyRole: scene?.type || "main",
         sceneSource: "ai",
-        durationSeconds: 3,
-        duration: 3,
+        durationSeconds: Number(scene?.duration || 3),
+        duration: Number(scene?.duration || 3),
         photoEffect: scene?.photoEffect || "slowZoomIn",
         caption: {
           ...normalizeCaption(photo.caption),
@@ -3111,7 +3155,7 @@ function runAiCaptionBuilder() {
   setMessage("AI \uc790\ub9c9\uc744 \uc0dd\uc131\ud588\uc2b5\ub2c8\ub2e4. \uae30\uc874 \uc790\ub9c9 \ud3b8\uc9d1 UI\uc5d0\uc11c \uc9c1\uc811 \uc218\uc815\ud560 \uc218 \uc788\uc2b5\ub2c8\ub2e4.");
 }
 
-function applyAiCaptionsForOneClick(toneValue = "emotional") {
+function applyAiCaptionsForOneClick(toneValue = "emotional", preset = getAiTemplatePreset(selectedTemplate)) {
   captionTone = toneValue;
   captionGeneratedAt = new Date().toISOString();
   if (captionToneInput) captionToneInput.value = captionTone;
@@ -3121,9 +3165,11 @@ function applyAiCaptionsForOneClick(toneValue = "emotional") {
   endingCaptionInput.value = toneRules.ending[0];
   const captionTargets = photos.filter(photo => photo.sceneSource === "ai" || photo.recommended || photo.selected);
   captionTargets.forEach((photo, index) => {
+    const templateCaption = composeAutoStoryboardCaption(index, captionTargets.length, preset);
+    const ruleCaption = composeSceneCaption(photo, index, captionTargets.length, toneRules, prefix);
     photo.caption = {
       ...normalizeCaption(photo.caption),
-      text: composeSceneCaption(photo, index, captionTargets.length, toneRules, prefix),
+      text: index % 2 === 0 ? templateCaption : ruleCaption,
       position: "bottom",
       style: "shadow",
       timing: "full",
@@ -3179,7 +3225,7 @@ async function runAiOneClickProduction() {
   aiAnalyzeRunning = true;
   disableAiControls(true);
   try {
-    updateAiAnalyzeProgress(0, 6, "\uc0ac\uc9c4 \ubd84\uc11d \uc911...");
+    updateAiAnalyzeProgress(0, 9, "\uc0ac\uc9c4 \ubd84\uc11d \uc911...");
     for (let index = 0; index < photos.length; index += 1) {
       const photo = photos[index];
       updateAiAnalyzeProgress(index, photos.length, `\uc0ac\uc9c4 \ubd84\uc11d \uc911... ${index + 1} / ${photos.length}`);
@@ -3200,12 +3246,14 @@ async function runAiOneClickProduction() {
       await new Promise(resolve => setTimeout(resolve, 0));
     }
 
-    updateAiAnalyzeProgress(2, 6, "\uc911\ubcf5 \uc0ac\uc9c4 \ud655\uc778 \uc911...");
+    updateAiAnalyzeProgress(2, 9, "\uc0ac\uc9c4 \uc815\ub82c \uc911...");
+    await new Promise(resolve => setTimeout(resolve, 0));
+    updateAiAnalyzeProgress(3, 9, "\uc911\ubcf5 \uc0ac\uc9c4 \ud655\uc778 \uc911...");
     const duplicateGroupCount = applyDuplicateGroups();
-    updateAiAnalyzeProgress(3, 6, "\uc81c\uc678 \ucd94\ucc9c \uc801\uc6a9 \uc911...");
+    updateAiAnalyzeProgress(4, 9, "\uc81c\uc678 \ucd94\ucc9c \uc801\uc6a9 \uc911...");
     refreshAllPhotoQuality();
 
-    updateAiAnalyzeProgress(4, 6, "\uc2a4\ud1a0\ub9ac\ubcf4\ub4dc \uc0dd\uc131 \uc911...");
+    updateAiAnalyzeProgress(5, 9, "\uc7a5\uba74 \uc0dd\uc131 \ubc0f \ud15c\ud50c\ub9bf \uc801\uc6a9 \uc911...");
     const storyboard = createLocalAiStoryboard(options);
     if (!storyboard) throw new Error("\uc81c\uc678 \ucd94\ucc9c\uc744 \uc81c\uc678\ud558\uba74 \uc0ac\uc6a9\ud560 \uc0ac\uc9c4\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.");
     applyLocalAiStoryboard(storyboard);
@@ -3217,9 +3265,13 @@ async function runAiOneClickProduction() {
     applyPresetOutputRatio(preset);
 
     if (options.autoCaption) {
-      updateAiAnalyzeProgress(5, 6, "\uc790\ub9c9 \uc0dd\uc131 \uc911...");
-      applyAiCaptionsForOneClick(options.tone);
+      updateAiAnalyzeProgress(6, 9, "\uc790\ub9c9 \uc0dd\uc131 \uc911...");
+      applyAiCaptionsForOneClick(options.tone, preset);
     }
+    updateAiAnalyzeProgress(7, 9, "\uc7a5\uba74 \uae38\uc774\uc640 \uc804\ud658\ud6a8\uacfc \uc801\uc6a9 \uc911...");
+    normalizeLastTransition();
+    updateAiAnalyzeProgress(8, 9, "\ucd9c\ub825 \ube44\uc728 \uc801\uc6a9 \uc911...");
+    applyPresetOutputRatio(preset);
 
     aiOneClickGenerated = true;
     aiOneClickOptions = options;
@@ -3236,14 +3288,18 @@ async function runAiOneClickProduction() {
         templateRecommendation
       };
     }
-    updateAiAnalyzeProgress(6, 6, "\uc644\ub8cc");
-    recommendationSummary.textContent = `AI \uc6d0\ud074\ub9ad \uc81c\uc791 \uc644\ub8cc: ${selectedPhotoIds.size}\uc7a5 \uad6c\uc131, \uc911\ubcf5 ${duplicateGroupCount}\uadf8\ub8f9 \ud655\uc778.`;
+    const sceneCount = selectedPhotoIds.size;
+    const estimatedSeconds = photos
+      .filter(photo => selectedPhotoIds.has(photo.id))
+      .reduce((sum, photo) => sum + Number(photo.durationSeconds || getSecondsPerPhoto()), 0);
+    updateAiAnalyzeProgress(9, 9, "\uc644\ub8cc");
+    recommendationSummary.textContent = `AI \uc6d0\ud074\ub9ad \uc81c\uc791 \uc644\ub8cc: \uc0ac\uc9c4 ${photos.length}\uc7a5 / \uc0dd\uc131 Scene ${sceneCount}\uac1c / \uc608\uc0c1 \uc601\uc0c1 \uae38\uc774 ${formatDuration(estimatedSeconds)} / \ud15c\ud50c\ub9bf ${preset.name} / \ube44\uc728 ${preset.recommendedRatio}`;
     setMessage("AI \uc601\uc0c1 \uad6c\uc131\uc774 \uc644\ub8cc\ub418\uc5c8\uc2b5\ub2c8\ub2e4. \ud0c0\uc784\ub77c\uc778\uc744 \ud655\uc778\ud55c \ub4a4 \ub80c\ub354\ub9c1 \uc2dc\uc791 \ubc84\ud2bc\uc744 \ub20c\ub7ec\uc8fc\uc138\uc694.");
     renderList();
     renderOutputEstimate();
     autosaveProject();
   } catch (error) {
-    updateAiAnalyzeProgress(0, 6, "\uc2e4\ud328");
+    updateAiAnalyzeProgress(0, 9, "\uc2e4\ud328");
     setMessage(error.message || "AI \uc6d0\ud074\ub9ad \uc81c\uc791\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.");
   } finally {
     aiAnalyzeRunning = false;
