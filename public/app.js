@@ -73,6 +73,7 @@ const projectInput = document.getElementById("projectInput");
 const projectStatus = document.getElementById("projectStatus");
 const recentProjectsPanel = document.getElementById("recentProjectsPanel");
 const recentProjectsList = document.getElementById("recentProjectsList");
+const projectBackupsList = document.getElementById("projectBackupsList");
 const restoreBanner = document.getElementById("restoreBanner");
 const restoreAutosaveButton = document.getElementById("restoreAutosaveButton");
 const dismissAutosaveButton = document.getElementById("dismissAutosaveButton");
@@ -125,6 +126,7 @@ const autosaveKey = "highlightStudio.autosaveProject";
 const recentProjectsKey = "highlightStudio.recentProjects";
 const authStorageKey = "highlightStudio.localAuth";
 const projectFormatVersion = 1;
+let autosaveEnabled = true;
 const labelColors = ["#2563eb", "#16a34a", "#f97316", "#9333ea", "#0891b2", "#dc2626", "#4f46e5", "#0f766e"];
 const encoderLabels = {
   auto: "\uc790\ub3d9 \uc120\ud0dd",
@@ -698,6 +700,10 @@ function renderOutputs(outputs = []) {
       </div>
       <div class="output-actions">
         <button type="button" class="secondary-button" data-action="preview-output" data-filename="${escapeHtml(file.filename)}">미리보기</button>
+        <button type="button" class="secondary-button" data-action="open-output" data-filename="${escapeHtml(file.filename)}">영상 열기</button>
+        <button type="button" class="secondary-button" data-action="open-output-folder">폴더 열기</button>
+        <button type="button" class="secondary-button" data-action="rename-output" data-filename="${escapeHtml(file.filename)}">이름 변경</button>
+        <button type="button" class="secondary-button" data-action="rerender-output">다시 렌더링</button>
         <a class="secondary-button" href="${file.downloadUrl}" download="${escapeHtml(file.filename)}">다운로드</a>
         <button type="button" class="secondary-button" data-action="copy-share" data-filename="${escapeHtml(file.filename)}">링크 복사</button>
         <button type="button" class="secondary-button" data-action="kakao-share" data-filename="${escapeHtml(file.filename)}">카카오 공유</button>
@@ -743,6 +749,59 @@ async function deleteOutputFile(filename) {
   } catch (error) {
     setMessage(error.message || "출력 파일 삭제에 실패했습니다.");
   }
+}
+
+async function openOutputFile(filename) {
+  if (!filename) return;
+  try {
+    const response = await fetch(`/api/outputs/${encodeURIComponent(filename)}/open`, { method: "POST" });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "영상 파일을 열지 못했습니다.");
+    setMessage(`${filename} 영상을 열었습니다.`);
+  } catch (error) {
+    setMessage(error.message || "영상 파일을 열지 못했습니다. outputs 폴더에서 직접 확인해 주세요.");
+  }
+}
+
+async function openOutputsFolder() {
+  try {
+    const response = await fetch("/api/outputs/open-folder", { method: "POST" });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "outputs 폴더를 열지 못했습니다.");
+    setMessage("outputs 폴더를 열었습니다.");
+  } catch (error) {
+    setMessage(error.message || "outputs 폴더를 열지 못했습니다.");
+  }
+}
+
+async function renameOutputFile(filename) {
+  if (!filename) return;
+  const nextName = window.prompt("새 MP4 파일명을 입력하세요.", filename);
+  if (!nextName || nextName === filename) return;
+  try {
+    const response = await fetch(`/api/outputs/${encodeURIComponent(filename)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileName: nextName })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "출력 파일명을 변경하지 못했습니다.");
+    const output = result.output;
+    if (latestOutputFile?.filename === filename && output) setOutputPreview(output);
+    await loadOutputs(output?.filename || "");
+    setMessage(`${filename} 파일명을 ${output?.filename || nextName}(으)로 변경했습니다.`);
+  } catch (error) {
+    setMessage(error.message || "출력 파일명 변경에 실패했습니다.");
+  }
+}
+
+function rerenderCurrentProject() {
+  if (!photos.length) {
+    setMessage("다시 렌더링할 프로젝트 사진이 없습니다.");
+    return;
+  }
+  setMessage("현재 프로젝트 설정으로 다시 렌더링을 시작합니다.");
+  generateButton.click();
 }
 
 function renderQueueJobs(jobs = [], activeJobId = "") {
@@ -1168,6 +1227,13 @@ function applyDesktopSettings(settings = {}) {
   if (settings.defaultFps && outputFpsInput) outputFpsInput.value = String(settings.defaultFps);
   if (settings.defaultTransition && defaultTransitionInput) defaultTransitionInput.value = settings.defaultTransition;
   if (settings.defaultEncoder && renderEncoderInput) renderEncoderInput.value = settings.defaultEncoder;
+  if (settings.defaultTemplate) {
+    selectedTemplate = getAiTemplatePreset(settings.defaultTemplate).id;
+    templateRecommendation = getTemplateRecommendation(getAiTemplatePreset(selectedTemplate));
+    if (oneClickTemplateInput) oneClickTemplateInput.value = selectedTemplate;
+    renderTemplateRecommendation();
+  }
+  autosaveEnabled = settings.autosaveEnabled !== false;
   renderOutputEstimate();
 }
 
@@ -1706,6 +1772,7 @@ async function loadRecentProjects() {
     if (response.ok && result.ok) serverRecent = result.recent || [];
   } catch (_) {}
   renderRecentProjects([...localRecent, ...serverRecent]);
+  loadProjectBackups();
 }
 
 function renderRecentProjects(recent = []) {
@@ -1733,6 +1800,48 @@ function renderRecentProjects(recent = []) {
   `).join("");
 }
 
+async function loadProjectBackups() {
+  if (!projectBackupsList) return;
+  try {
+    const response = await fetch("/api/project/backups");
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "프로젝트 백업 목록을 불러오지 못했습니다.");
+    const backups = result.backups || [];
+    if (!backups.length) {
+      projectBackupsList.innerHTML = `<p class="muted-text">복원할 백업이 아직 없습니다.</p>`;
+      return;
+    }
+    projectBackupsList.innerHTML = backups.map(backup => `
+      <div class="recent-project-row">
+        <div>
+          <strong>${escapeHtml(backup.name || "Highlight Studio Project")}</strong>
+          <span>${escapeHtml(backup.source || "backup")} / 사진 ${Number(backup.photoCount || 0)}장 / ${formatDateTime(backup.savedAt)}</span>
+        </div>
+        <button type="button" data-action="restore-project-backup" data-backup-id="${escapeHtml(backup.id)}">백업 복원</button>
+      </div>
+    `).join("");
+  } catch (error) {
+    projectBackupsList.innerHTML = `<p class="muted-text">${escapeHtml(error.message || "프로젝트 백업 목록을 불러오지 못했습니다.")}</p>`;
+  }
+}
+
+async function restoreProjectBackup(backupId) {
+  if (!backupId) return;
+  if (photos.length && !window.confirm("현재 작업을 백업 내용으로 교체할까요?")) return;
+  try {
+    const response = await fetch(`/api/project/backups/${encodeURIComponent(backupId)}/restore`, { method: "POST" });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || "프로젝트 백업을 복원하지 못했습니다.");
+    restoreProjectData(result.project);
+    localStorage.setItem(autosaveKey, JSON.stringify(createProjectData()));
+    writeLocalRecentProject(result.project, result.recent?.fileName || "restored-project.hsp", "backup");
+    loadRecentProjects();
+    setMessage("프로젝트 백업을 복원했습니다. 원본 사진 파일은 필요 시 다시 업로드해 주세요.");
+  } catch (error) {
+    setMessage(error.message || "프로젝트 백업 복원에 실패했습니다.");
+  }
+}
+
 async function saveProject(options = {}) {
   const data = createProjectData();
   if (options.askName || !currentProjectFileName) {
@@ -1755,6 +1864,10 @@ async function saveProject(options = {}) {
 }
 
 async function autosaveProject() {
+  if (!autosaveEnabled) {
+    setProjectStatus("자동 저장 꺼짐");
+    return;
+  }
   try {
     const data = createProjectData();
     localStorage.setItem(autosaveKey, JSON.stringify(data));
@@ -3887,6 +4000,14 @@ recentProjectsList.addEventListener("click", event => {
   setMessage("브라우저 보안상 최근 파일 경로를 직접 열 수 없습니다. .hsp 파일을 선택해 주세요.");
   projectInput.click();
 });
+if (projectBackupsList) {
+  projectBackupsList.addEventListener("click", event => {
+    const target = event.target.closest("[data-action='restore-project-backup']");
+    if (!target) return;
+    restoreProjectBackup(target.dataset.backupId);
+  });
+}
+
 restoreAutosaveButton.addEventListener("click", () => {
   if (!pendingAutosaveData) return;
   restoreProjectData(pendingAutosaveData);
@@ -3967,6 +4088,18 @@ outputsList.addEventListener("click", event => {
       downloadUrl: outputDownloadUrl(filename)
     });
   }
+  if (target.dataset.action === "open-output") {
+    openOutputFile(filename);
+  }
+  if (target.dataset.action === "open-output-folder") {
+    openOutputsFolder();
+  }
+  if (target.dataset.action === "rename-output") {
+    renameOutputFile(filename);
+  }
+  if (target.dataset.action === "rerender-output") {
+    rerenderCurrentProject();
+  }
   if (target.dataset.action === "copy-share") {
     copyShareLink(filename);
   }
@@ -4007,4 +4140,6 @@ queuePollTimer = setInterval(loadRenderQueue, 2000);
 restoreAutosaveIfWanted();
 restoreServerAutosaveIfAvailable();
 loadRecentProjects();
-setInterval(autosaveProject, 5 * 60 * 1000);
+setInterval(() => {
+  if (autosaveEnabled) autosaveProject();
+}, 5 * 60 * 1000);

@@ -11,3 +11,4 @@ release/
 .electron-cache/
 .electron-builder-cache/
 data/*.json
+data/backups/

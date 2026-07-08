@@ -72,7 +72,11 @@ function defaultSettings() {
     defaultResolution: "1080x1920",
     defaultFps: 30,
     defaultTransition: "fade",
-    defaultEncoder: "auto"
+    defaultEncoder: "auto",
+    defaultTemplate: "taekwondo-class",
+    autosaveEnabled: true,
+    autoBackupEnabled: true,
+    backupLimit: 10
   };
 }
 
@@ -199,6 +203,7 @@ async function startInternalServer() {
   process.env.HIGHLIGHT_OUTPUT_DIR = settings.outputDir;
   process.env.HIGHLIGHT_UPLOAD_DIR = settings.tempDir;
   process.env.HIGHLIGHT_DATA_DIR = settings.dataDir;
+  process.env.HIGHLIGHT_BACKUP_LIMIT = String(settings.backupLimit || 10);
 
   const existingServer = await pingLocalServer();
   if (existingServer?.ok && existingServer?.app === "Highlight Studio") {
@@ -370,7 +375,20 @@ function settingsHtml() {
         ].map(([value, label]) => `<option value="${value}"${settings.defaultEncoder === value ? " selected" : ""}>${label}</option>`).join("")}
       </select>
     </label>
-    <button id="save" type="button">저장</button>
+        <label>기본 템플릿
+      <select id="defaultTemplate">
+        ${[
+          ["taekwondo-class", "태권도 수업"],
+          ["demo-team", "시범단"],
+          ["kids-sports", "유아체육"],
+          ["promotion", "홍보형"]
+        ].map(([value, label]) => `<option value="${value}"${settings.defaultTemplate === value ? " selected" : ""}>${label}</option>`).join("")}
+      </select>
+    </label>
+    <label><input id="autosaveEnabled" type="checkbox"${settings.autosaveEnabled !== false ? " checked" : ""}> 자동 저장 사용</label>
+    <label><input id="autoBackupEnabled" type="checkbox"${settings.autoBackupEnabled !== false ? " checked" : ""}> 프로젝트 자동 백업 사용</label>
+    <label>백업 보관 개수<input id="backupLimit" type="number" min="1" max="50" value="${Number(settings.backupLimit || 10)}"></label>
+<button id="save" type="button">저장</button>
     <script>
       const { ipcRenderer } = require("electron");
       document.getElementById("chooseOutput").addEventListener("click", () => ipcRenderer.send("settings:choose-directory", "outputDir"));
@@ -382,7 +400,7 @@ function settingsHtml() {
           defaultResolution: document.getElementById("defaultResolution").value,
           defaultFps: Number(document.getElementById("defaultFps").value),
           defaultTransition: document.getElementById("defaultTransition").value,
-          defaultEncoder: document.getElementById("defaultEncoder").value
+          defaultEncoder: document.getElementById("defaultEncoder").value,\n          defaultTemplate: document.getElementById("defaultTemplate").value,\n          autosaveEnabled: document.getElementById("autosaveEnabled").checked,\n          autoBackupEnabled: document.getElementById("autoBackupEnabled").checked,\n          backupLimit: Number(document.getElementById("backupLimit").value) || 10
         });
       });
     </script>

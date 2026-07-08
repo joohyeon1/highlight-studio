@@ -15,6 +15,7 @@ const UPLOAD_DIR = path.resolve(process.env.HIGHLIGHT_UPLOAD_DIR || path.join(RO
 const OUTPUT_DIR = path.resolve(process.env.HIGHLIGHT_OUTPUT_DIR || path.join(ROOT_DIR, "outputs"));
 const DATA_DIR = path.resolve(process.env.HIGHLIGHT_DATA_DIR || path.join(ROOT_DIR, "data"));
 const USER_TEMPLATES_PATH = path.join(DATA_DIR, "templates.json");
+const BACKUP_DIR = path.join(DATA_DIR, "backups");
 const MAX_PHOTOS = Number(process.env.HIGHLIGHT_MAX_PHOTOS || 200);
 const PHOTO_SECONDS = Number(process.env.HIGHLIGHT_PHOTO_SECONDS || 2);
 const SUPPORTED_RENDER_TRANSITIONS = new Set(["none", "fade", "crossfade"]);
@@ -127,6 +128,7 @@ const recentProjects = [];
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
 let ffmpegPath = "ffmpeg";
 try {
@@ -190,6 +192,22 @@ function outputFilePayload(fileName, stat) {
     url: `/outputs/${encodeURIComponent(fileName)}`,
     downloadUrl: `/api/outputs/${encodeURIComponent(fileName)}/download`
   };
+}
+
+function openLocalPath(targetPath) {
+  const resolvedPath = path.resolve(targetPath);
+  if (process.platform === "win32") {
+    const child = spawn("cmd", ["/c", "start", "", resolvedPath], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true
+    });
+    child.unref();
+    return;
+  }
+  const command = process.platform === "darwin" ? "open" : "xdg-open";
+  const child = spawn(command, [resolvedPath], { detached: true, stdio: "ignore" });
+  child.unref();
 }
 
 function getPublicBaseUrl(req) {
@@ -675,6 +693,82 @@ function rememberProject(project, source = "browser") {
   recentProjects.unshift(summary);
   recentProjects.splice(10);
   return summary;
+}
+
+function projectBackupFileName(project) {
+  const base = safeName(project?.project?.name || project?.video?.title || "highlight-studio-project");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `${stamp}-${base}.hsp.json`;
+}
+
+async function cleanupOldBackups(limit = Number(process.env.HIGHLIGHT_BACKUP_LIMIT || 10)) {
+  const entries = await fs.promises.readdir(BACKUP_DIR, { withFileTypes: true });
+  const backups = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".hsp.json")) continue;
+    const fullPath = path.join(BACKUP_DIR, entry.name);
+    const stat = await fs.promises.stat(fullPath);
+    backups.push({ name: entry.name, fullPath, modifiedAt: stat.mtime });
+  }
+  backups.sort((a, b) => b.modifiedAt - a.modifiedAt);
+  await Promise.all(backups.slice(Math.max(0, limit)).map(item => fs.promises.rm(item.fullPath, { force: true })));
+}
+
+async function writeProjectBackup(project, source = "manual") {
+  const validated = validateProjectDocument(project);
+  const fileName = projectBackupFileName(validated);
+  const fullPath = path.join(BACKUP_DIR, fileName);
+  const payload = {
+    version: 1,
+    source,
+    savedAt: new Date().toISOString(),
+    project: validated
+  };
+  await fs.promises.writeFile(fullPath, JSON.stringify(payload, null, 2), "utf8");
+  await cleanupOldBackups();
+  return {
+    id: fileName,
+    fileName,
+    name: validated.project?.name || validated.video?.title || "Highlight Studio Project",
+    source,
+    photoCount: Array.isArray(validated.photos) ? validated.photos.length : 0,
+    savedAt: payload.savedAt
+  };
+}
+
+async function listProjectBackups() {
+  const entries = await fs.promises.readdir(BACKUP_DIR, { withFileTypes: true });
+  const backups = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".hsp.json")) continue;
+    const fullPath = path.join(BACKUP_DIR, entry.name);
+    try {
+      const data = JSON.parse(await fs.promises.readFile(fullPath, "utf8"));
+      const project = data.project || {};
+      backups.push({
+        id: entry.name,
+        fileName: entry.name,
+        name: project.project?.name || project.video?.title || "Highlight Studio Project",
+        source: data.source || "backup",
+        photoCount: Array.isArray(project.photos) ? project.photos.length : 0,
+        savedAt: data.savedAt || project.project?.modifiedAt || ""
+      });
+    } catch (_) {}
+  }
+  backups.sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+  return backups.slice(0, Number(process.env.HIGHLIGHT_BACKUP_LIMIT || 10));
+}
+
+async function readProjectBackup(backupId) {
+  const cleanName = path.basename(String(backupId || ""));
+  if (!cleanName || cleanName !== backupId || !cleanName.endsWith(".hsp.json")) {
+    throw new Error("복원할 백업 파일을 찾을 수 없습니다.");
+  }
+  const fullPath = path.resolve(BACKUP_DIR, cleanName);
+  const backupRoot = path.resolve(BACKUP_DIR) + path.sep;
+  if (!fullPath.startsWith(backupRoot)) throw new Error("백업 폴더 밖 파일은 복원할 수 없습니다.");
+  const data = JSON.parse(await fs.promises.readFile(fullPath, "utf8"));
+  return validateProjectDocument(data.project);
 }
 
 function getRenderPhotos(project, files) {
@@ -1289,15 +1383,17 @@ app.get("/api/templates", (_req, res) => {
   res.json({ ok: true, templates: getAllTemplates() });
 });
 
-app.post("/api/project/save", (req, res) => {
+app.post("/api/project/save", async (req, res) => {
   try {
     const project = validateProjectDocument(req.body?.project || req.body);
     const summary = rememberProject(project, "save");
+    const backup = await writeProjectBackup(project, "save");
     res.json({
       ok: true,
       fileName: projectFileName(project, req.body?.fileName),
       project,
       recent: summary,
+      backup,
       message: ".hsp 프로젝트 저장 준비가 완료되었습니다."
     });
   } catch (error) {
@@ -1319,7 +1415,7 @@ app.get("/api/project/recent", (_req, res) => {
   res.json({ ok: true, recent: recentProjects });
 });
 
-app.post("/api/project/autosave", (req, res) => {
+app.post("/api/project/autosave", async (req, res) => {
   try {
     const project = validateProjectDocument(req.body?.project || req.body);
     projectAutosave = {
@@ -1327,7 +1423,8 @@ app.post("/api/project/autosave", (req, res) => {
       savedAt: new Date().toISOString(),
       summary: projectSummary(project, "autosave")
     };
-    res.json({ ok: true, autosave: projectAutosave.summary });
+    const backup = await writeProjectBackup(project, "autosave");
+    res.json({ ok: true, autosave: projectAutosave.summary, backup });
   } catch (error) {
     res.status(400).json({ ok: false, error: error.message || "자동 저장에 실패했습니다." });
   }
@@ -1336,6 +1433,24 @@ app.post("/api/project/autosave", (req, res) => {
 app.get("/api/project/autosave", (_req, res) => {
   if (!projectAutosave) return res.json({ ok: true, autosave: null });
   res.json({ ok: true, autosave: projectAutosave.summary, project: projectAutosave.project, savedAt: projectAutosave.savedAt });
+});
+
+app.get("/api/project/backups", async (_req, res) => {
+  try {
+    res.json({ ok: true, backups: await listProjectBackups() });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message || "프로젝트 백업 목록을 불러오지 못했습니다." });
+  }
+});
+
+app.post("/api/project/backups/:backupId/restore", async (req, res) => {
+  try {
+    const project = await readProjectBackup(req.params.backupId);
+    const summary = rememberProject(project, "backup-restore");
+    res.json({ ok: true, project, recent: summary });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message || "프로젝트 백업을 복원하지 못했습니다." });
+  }
 });
 
 app.post("/api/templates", (req, res) => {
@@ -1525,6 +1640,48 @@ app.get("/api/outputs/:filename/download", (req, res) => {
     if (error || !stat.isFile()) return res.status(404).json({ ok: false, error: "출력 파일을 찾을 수 없습니다." });
     res.download(resolved.fullPath, resolved.cleanName);
   });
+});
+
+app.post("/api/outputs/open-folder", (_req, res) => {
+  try {
+    openLocalPath(OUTPUT_DIR);
+    res.json({ ok: true, folder: OUTPUT_DIR });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message || "outputs 폴더를 열지 못했습니다." });
+  }
+});
+
+app.post("/api/outputs/:filename/open", (req, res) => {
+  const resolved = resolveOutputMp4(req.params.filename);
+  if (!resolved) return res.status(400).json({ ok: false, error: "MP4 출력 파일명만 열 수 있습니다." });
+  fs.stat(resolved.fullPath, (error, stat) => {
+    if (error || !stat.isFile()) return res.status(404).json({ ok: false, error: "열 출력 파일을 찾을 수 없습니다." });
+    try {
+      openLocalPath(resolved.fullPath);
+      res.json({ ok: true, filename: resolved.cleanName });
+    } catch (openError) {
+      res.status(500).json({ ok: false, error: openError.message || "영상 파일을 열지 못했습니다." });
+    }
+  });
+});
+
+app.patch("/api/outputs/:filename", async (req, res) => {
+  const resolved = resolveOutputMp4(req.params.filename);
+  if (!resolved) return res.status(400).json({ ok: false, error: "MP4 출력 파일명만 변경할 수 있습니다." });
+  const nextName = safeOutputFileName(req.body?.fileName || req.body?.filename || "");
+  if (!nextName || nextName === resolved.cleanName) return res.json({ ok: true, filename: resolved.cleanName });
+  const nextResolved = resolveOutputMp4(nextName);
+  if (!nextResolved) return res.status(400).json({ ok: false, error: "새 파일명은 .mp4 형식이어야 합니다." });
+  if (fs.existsSync(nextResolved.fullPath)) {
+    return res.status(409).json({ ok: false, error: "같은 이름의 출력 파일이 이미 있습니다." });
+  }
+  try {
+    await fs.promises.rename(resolved.fullPath, nextResolved.fullPath);
+    const stat = await fs.promises.stat(nextResolved.fullPath);
+    res.json({ ok: true, output: outputFilePayload(nextResolved.cleanName, stat) });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message || "출력 파일명을 변경하지 못했습니다." });
+  }
 });
 
 app.delete("/api/outputs/:filename", async (req, res) => {
