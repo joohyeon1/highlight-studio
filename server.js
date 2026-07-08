@@ -8,7 +8,7 @@ const multer = require("multer");
 loadLocalEnv();
 
 const PORT = Number(process.env.PORT || 4000);
-const APP_VERSION = "0.1.0";
+const APP_VERSION = "1.0.0";
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const UPLOAD_DIR = path.resolve(process.env.HIGHLIGHT_UPLOAD_DIR || path.join(ROOT_DIR, "uploads"));
@@ -1744,12 +1744,25 @@ app.use((error, _req, res, _next) => {
 });
 
 function startServer(port = PORT) {
-  return app.listen(port, () => {
+  const server = app.listen(port, () => {
     console.log(`Highlight Studio listening: http://localhost:${port}`);
     console.log(`Uploads: ${UPLOAD_DIR}`);
     console.log(`Outputs: ${OUTPUT_DIR}`);
     logStartupEncoderDetection();
   });
+  server.on("error", error => {
+    if (error.code === "EADDRINUSE") {
+      console.error(`Highlight Studio를 시작할 수 없습니다. 포트 ${port}가 이미 사용 중입니다.`);
+      console.error("다른 Highlight Studio 창이나 localhost:4000을 사용하는 프로그램을 종료한 뒤 다시 실행하세요.");
+    } else if (error.code === "EACCES") {
+      console.error(`Highlight Studio를 시작할 수 없습니다. 포트 ${port} 접근 권한이 없습니다.`);
+      console.error("관리자 권한 또는 다른 포트 설정을 확인해 주세요.");
+    } else {
+      console.error(`Highlight Studio 서버 시작 실패: ${error.message}`);
+    }
+    if (require.main === module) process.exit(1);
+  });
+  return server;
 }
 
 if (require.main === module) {

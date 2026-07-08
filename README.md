@@ -4,7 +4,7 @@ Highlight Studio is an independent video creation and editing app for Taekwondo 
 
 ## Current Status
 
-Implemented through STEP 10 final check and stabilization.
+v1.0 release candidate for Windows desktop distribution.
 
 - Photo upload and browser-memory photo management
 - Student tagging and filtering
@@ -21,6 +21,16 @@ Implemented through STEP 10 final check and stabilization.
 - Share link copy, Kakao share preparation, Band share URL
 - Local login, license status, and update check structure
 - Deployment preparation for `https://highlight.sportlink.kr`
+
+## Install And Run
+
+Windows installer:
+
+`	ext
+dist/Highlight Studio Setup 1.0.0.exe
+`
+
+After installation, launch Highlight Studio.exe from the desktop shortcut or Windows Start menu. The app opens in a desktop window without a browser address bar.
 
 ## Local Run
 
@@ -109,6 +119,9 @@ Outputs:
 GET /api/outputs
 GET /api/outputs/:filename/share-info
 GET /api/outputs/:filename/download
+POST /api/outputs/:filename/open
+POST /api/outputs/open-folder
+PATCH /api/outputs/:filename
 DELETE /api/outputs/:filename
 ```
 
@@ -196,7 +209,7 @@ npm run dist
 Generated files:
 
 ```text
-dist/Highlight Studio Setup 0.1.0.exe
+dist/Highlight Studio Setup 1.0.0.exe
 dist/win-unpacked/Highlight Studio.exe
 ```
 
@@ -204,7 +217,7 @@ Installer distribution:
 
 - Run `npm run dist` to create the Windows installer.
 - Share the installer from the `dist/` folder.
-- The installer file is named like `Highlight Studio Setup 0.1.0.exe`.
+- The installer file is named like `Highlight Studio Setup 1.0.0.exe`.
 - The unpacked executable is available at `dist/win-unpacked/Highlight Studio.exe`.
 - GitHub Releases upload is planned for the next step; this repository does not upload installers automatically yet.
 
@@ -252,6 +265,30 @@ Auto update:
 - Actual auto-update server integration is not enabled yet.
 - The build metadata is prepared for future GitHub Releases publishing.
 - `electron-updater` can be connected in a later step when the release channel is ready.
+
+## Basic Usage
+
+1. Upload JPG, PNG, or WEBP photos.
+2. Add students and tag photos manually when needed.
+3. Choose a template or run AI one-click generation.
+4. Review the timeline, captions, effects, transitions, and scene lengths.
+5. Set output ratio, FPS, quality, and rendering engine.
+6. Click render to create an MP4 locally.
+7. Use the output list to preview, open, rename, download, delete, or render again.
+8. Save work as .hsp; autosave and local backups help restore recent work.
+
+## Troubleshooting
+
+- FFmpeg missing: reinstall dependencies or use the packaged desktop app. The render log explains the failure.
+- Port 4000 blocked: close the other app using the port, then restart Highlight Studio.
+- Photo file missing: upload original photos again after loading a .hsp project.
+- Render failed: check the render log, skipped-photo list, and output folder permission.
+- Project save/load failed: confirm the file is a Highlight Studio .hsp JSON project.
+- Output folder blocked: choose another output folder in desktop settings.
+
+## Local Processing Principle
+
+Highlight Studio processes photos and videos on the local PC. It does not use Firestore, Firebase, OpenAI, Cloud AI, automatic uploads, or SportsLink data storage.
 
 ## Final Check Notes
 

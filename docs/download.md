@@ -6,7 +6,7 @@ Photos and videos are not stored in SportsLink. SportsLink only opens Highlight 
 
 ## Windows Installation
 
-1. Download `Highlight Studio Setup 0.1.0.exe`.
+1. Download `Highlight Studio Setup 1.0.0.exe`.
 2. Run the installer.
 3. Follow the Windows setup steps.
 4. Launch `Highlight Studio.exe` from the desktop shortcut or Start menu.
@@ -26,11 +26,11 @@ dist/
 Typical output:
 
 ```text
-dist/Highlight Studio Setup 0.1.0.exe
+dist/Highlight Studio Setup 1.0.0.exe
 dist/win-unpacked/Highlight Studio.exe
 ```
 
-GitHub Releases upload is planned for the next step. This step only prepares the download and installation guide.
+For v1.0 distribution, share the installer from the dist/ folder or attach it to a release channel when ready.
 
 ## Development Run
 
