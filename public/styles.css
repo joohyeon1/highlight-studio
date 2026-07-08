@@ -544,6 +544,39 @@ textarea {
   width: 16px;
   height: 16px;
 }
+.template-recommendation-panel {
+  grid-column: 1 / -1;
+  padding: 10px 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #fff;
+}
+.template-recommendation-panel strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+.template-recommendation-panel dl {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.template-recommendation-panel div {
+  display: grid;
+  gap: 3px;
+}
+.template-recommendation-panel dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.template-recommendation-panel dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+}
 .preview-panel {
   align-self: start;
   position: sticky;
@@ -1624,4 +1657,5 @@ textarea {
   .queue-actions { justify-content: flex-start; }
   .output-item { grid-template-columns: 1fr; }
   .output-actions { justify-content: flex-start; }
+  .template-recommendation-panel dl { grid-template-columns: 1fr; }
 }

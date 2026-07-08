@@ -19,6 +19,7 @@ const oneClickLengthInput = document.getElementById("oneClickLengthInput");
 const oneClickExcludeInput = document.getElementById("oneClickExcludeInput");
 const oneClickDuplicateInput = document.getElementById("oneClickDuplicateInput");
 const oneClickCaptionInput = document.getElementById("oneClickCaptionInput");
+const templateRecommendationPanel = document.getElementById("templateRecommendationPanel");
 const aiPhotoFilter = document.getElementById("aiPhotoFilter");
 const aiAnalyzeStatus = document.getElementById("aiAnalyzeStatus");
 const aiAnalyzeProgressBar = document.getElementById("aiAnalyzeProgressBar");
@@ -154,7 +155,13 @@ const aiTemplatePresets = [
     introText: "\uc624\ub298\uc758 \ud0dc\uad8c\ub3c4 \uc218\uc5c5 \ud558\uc774\ub77c\uc774\ud2b8",
     endingText: "\uba4b\uc9c4 \uc131\uc7a5, \ub2e4\uc74c \uc2dc\uac04\uc5d0\ub3c4 \uacc4\uc18d\ub429\ub2c8\ub2e4!",
     recommendedRatio: "16:9",
-    defaultEffect: "kenburns"
+    defaultEffect: "kenburns",
+    captionTone: "\ubc1d\uace0 \ud798\ucc2c \uc131\uc7a5\ud615",
+    captionStyle: "\uc9e7\uace0 \uae0d\uc815\uc801\uc778 \uc218\uc5c5 \ubb38\uc7a5",
+    musicStyle: "\ubc1d\uc740 \uc2a4\ud3ec\uce20/\uc5c5\ud15c\ud3ec",
+    colorTheme: "blue-energy",
+    titleStyle: "bold-impact",
+    endingStyle: "warm-closing"
   },
   {
     id: "demo-team",
@@ -166,7 +173,13 @@ const aiTemplatePresets = [
     introText: "\uc2dc\ubc94\ub2e8\uc758 \uba4b\uc9c4 \uc21c\uac04",
     endingText: "\uba4b\uc9c4 \uc2dc\ubc94\uc5d0 \ud070 \ubc15\uc218\ub97c \ubcf4\ub0c5\ub2c8\ub2e4!",
     recommendedRatio: "16:9",
-    defaultEffect: "dynamicZoom"
+    defaultEffect: "dynamicZoom",
+    captionTone: "\uc6c5\uc7a5\ud558\uace0 \uba4b\uc788\ub294 \uacf5\uc5f0\ud615",
+    captionStyle: "\uac15\ud55c \uc784\ud329\ud2b8 \ubb38\uc7a5",
+    musicStyle: "\uc6c5\uc7a5\ud55c \ud37c\ud3ec\uba3c\uc2a4/\ube44\ud2b8\uac10",
+    colorTheme: "black-gold",
+    titleStyle: "bold-impact",
+    endingStyle: "power-closing"
   },
   {
     id: "kids-physical",
@@ -178,7 +191,13 @@ const aiTemplatePresets = [
     introText: "\uc544\uc774\ub4e4\uc758 \uc990\uac70\uc6b4 \uc6c0\uc9c1\uc784",
     endingText: "\ub2e4\uc74c \uc2dc\uac04\uc774 \ub354 \uae30\ub300\ub429\ub2c8\ub2e4!",
     recommendedRatio: "9:16",
-    defaultEffect: "bright"
+    defaultEffect: "bright",
+    captionTone: "\uadc0\uc5fd\uace0 \ub530\ub73b\ud55c \ub180\uc774\ud615",
+    captionStyle: "\ubd80\ub4dc\ub7fd\uace0 \uc9e7\uc740 \ubb38\uc7a5",
+    musicStyle: "\ubc1d\uace0 \uadc0\uc5ec\uc6b4 \ud0a4\uc988 \uc74c\uc545",
+    colorTheme: "pastel-fun",
+    titleStyle: "soft-playful",
+    endingStyle: "warm-closing"
   },
   {
     id: "promotion-test",
@@ -190,7 +209,13 @@ const aiTemplatePresets = [
     introText: "\uc2b9\uae09\uc2ec\uc0ac \ud558\uc774\ub77c\uc774\ud2b8",
     endingText: "\uc624\ub298\uc758 \ub178\ub825\uc774 \uba4b\uc9c4 \uc131\uc7a5\uc774 \ub418\uc5c8\uc2b5\ub2c8\ub2e4.",
     recommendedRatio: "16:9",
-    defaultEffect: "slowZoomIn"
+    defaultEffect: "slowZoomIn",
+    captionTone: "\uc9c4\uc9c0\ud558\uace0 \uc131\uc7a5 \uc911\uc2ec",
+    captionStyle: "\ub178\ub825\uacfc \uc131\uc7a5\uc744 \uac15\uc870\ud558\ub294 \ubb38\uc7a5",
+    musicStyle: "\uac10\ub3d9\uc801\uc778 \uc2a4\ud3ec\uce20 \uc74c\uc545",
+    colorTheme: "red-discipline",
+    titleStyle: "clean-ceremony",
+    endingStyle: "warm-closing"
   },
   {
     id: "competition-event",
@@ -202,7 +227,13 @@ const aiTemplatePresets = [
     introText: "\ub300\ud68c\uc640 \ud589\uc0ac\uc758 \ud558\uc774\ub77c\uc774\ud2b8",
     endingText: "\ubaa8\ub450\uc758 \ub3c4\uc804\uc5d0 \ud070 \ubc15\uc218\ub97c \ubcf4\ub0c5\ub2c8\ub2e4!",
     recommendedRatio: "16:9",
-    defaultEffect: "dynamicZoom"
+    defaultEffect: "dynamicZoom",
+    captionTone: "\uae34\uc7a5\uac10 \uc788\uace0 \uc5ed\ub3d9\uc801\uc778 \ubd84\uc704\uae30",
+    captionStyle: "\ud604\uc7a5\uac10 \uc788\ub294 \ubb38\uc7a5",
+    musicStyle: "\ube60\ub978 \uc2a4\ud3ec\uce20/\uc774\ubca4\ud2b8 \uc74c\uc545",
+    colorTheme: "stadium-blue",
+    titleStyle: "bold-impact",
+    endingStyle: "power-closing"
   },
   {
     id: "birthday-celebration",
@@ -214,7 +245,13 @@ const aiTemplatePresets = [
     introText: "\ud2b9\ubcc4\ud55c \ub0a0\uc758 \ud589\ubcf5\ud55c \uc21c\uac04",
     endingText: "\ud568\uaed8 \ucd95\ud558\ud574 \uc8fc\uc154\uc11c \uac10\uc0ac\ud569\ub2c8\ub2e4!",
     recommendedRatio: "1:1",
-    defaultEffect: "slowZoomIn"
+    defaultEffect: "slowZoomIn",
+    captionTone: "\ubc1d\uace0 \ucd95\ud558\ud558\ub294 \ubd84\uc704\uae30",
+    captionStyle: "\ucd95\ud558 \uba54\uc2dc\uc9c0 \uc911\uc2ec",
+    musicStyle: "\ud589\ubcf5\ud558\uace0 \uacbd\ucf8c\ud55c \uc74c\uc545",
+    colorTheme: "party-bright",
+    titleStyle: "soft-playful",
+    endingStyle: "celebration-closing"
   },
   {
     id: "graduation-completion",
@@ -226,7 +263,13 @@ const aiTemplatePresets = [
     introText: "\uc878\uc5c5\uacfc \uc218\ub8cc\uc758 \uc18c\uc911\ud55c \uae30\uc5b5",
     endingText: "\uc0c8\ub85c\uc6b4 \uc2dc\uc791\uc744 \uc751\uc6d0\ud569\ub2c8\ub2e4.",
     recommendedRatio: "16:9",
-    defaultEffect: "slowZoomOut"
+    defaultEffect: "slowZoomOut",
+    captionTone: "\uac10\ub3d9\uc801\uc774\uace0 \ub530\ub73b\ud55c \ub9c8\ubb34\ub9ac",
+    captionStyle: "\ucd94\uc5b5\uacfc \uc131\uc7a5\uc744 \ub2f4\uc740 \ubb38\uc7a5",
+    musicStyle: "\ub530\ub73b\ud55c \uac10\ub3d9 \uc74c\uc545",
+    colorTheme: "warm-memory",
+    titleStyle: "clean-ceremony",
+    endingStyle: "warm-closing"
   },
   {
     id: "travel-vlog",
@@ -238,7 +281,13 @@ const aiTemplatePresets = [
     introText: "\uc6b0\ub9ac\uc758 \uc5ec\ud589 \ud558\uc774\ub77c\uc774\ud2b8",
     endingText: "\ub2e4\uc74c \uc5ec\uc815\ub3c4 \ud568\uaed8\ud574\uc694!",
     recommendedRatio: "9:16",
-    defaultEffect: "panRight"
+    defaultEffect: "panRight",
+    captionTone: "\uc790\uc5f0\uc2a4\ub7fd\uace0 \ud3b8\uc548\ud55c \uae30\ub85d\ud615",
+    captionStyle: "\uc77c\uc0c1 \ube0c\uc774\ub85c\uadf8 \ubb38\uc7a5",
+    musicStyle: "\uc0b0\ub73b\ud55c \ube0c\uc774\ub85c\uadf8 \uc74c\uc545",
+    colorTheme: "clean-vlog",
+    titleStyle: "minimal-vlog",
+    endingStyle: "simple-closing"
   }
 ];
 
@@ -356,6 +405,7 @@ let aiOneClickOptions = null;
 let aiOneClickGeneratedAt = "";
 let selectedTemplate = "taekwondo-class";
 let templateAppliedAt = "";
+let templateRecommendation = null;
 let aiAnalyzeRunning = false;
 let timelineZoom = 100;
 let activeTransitionPhotoId = null;
@@ -1265,6 +1315,7 @@ function createProjectData() {
       selectedTemplate,
       templatePresetVersion,
       templateAppliedAt,
+      templateRecommendation: templateRecommendation || getTemplateRecommendation(getAiTemplatePreset(selectedTemplate)),
       outputRatio: getAiTemplatePreset(selectedTemplate).recommendedRatio,
       bgm: bgmReference,
       outputOptions: getOutputOptions()
@@ -1278,6 +1329,7 @@ function createProjectData() {
       selectedTemplate,
       templatePresetVersion,
       templateAppliedAt,
+      templateRecommendation: templateRecommendation || getTemplateRecommendation(getAiTemplatePreset(selectedTemplate)),
       outputRatio: getAiTemplatePreset(selectedTemplate).recommendedRatio,
       captionTone,
       captionGeneratedAt,
@@ -1327,8 +1379,10 @@ function restoreProjectData(data) {
   aiOneClickGeneratedAt = data.video?.aiOneClickGeneratedAt || data.storyboard?.generatedAt || "";
   selectedTemplate = getAiTemplatePreset(data.video?.selectedTemplate || data.storyboard?.selectedTemplate || aiOneClickOptions?.templateId || "taekwondo-class").id;
   templateAppliedAt = data.video?.templateAppliedAt || data.storyboard?.templateAppliedAt || "";
+  templateRecommendation = data.video?.templateRecommendation || data.storyboard?.templateRecommendation || getTemplateRecommendation(getAiTemplatePreset(selectedTemplate));
   if (captionToneInput) captionToneInput.value = captionTone;
   if (oneClickTemplateInput) oneClickTemplateInput.value = selectedTemplate;
+  renderTemplateRecommendation();
   if (oneClickToneInput) oneClickToneInput.value = aiOneClickOptions?.tone || captionTone || "emotional";
   if (oneClickLengthInput) oneClickLengthInput.value = aiOneClickOptions?.length || "normal";
   if (oneClickExcludeInput) oneClickExcludeInput.checked = aiOneClickOptions?.excludeRecommended !== false;
@@ -1412,6 +1466,7 @@ function restoreProjectData(data) {
   setProjectStatus(`\ubd88\ub7ec\uc634: ${formatDateTime(projectModifiedAt)}`);
   renderStudents();
   renderList();
+  renderTemplateRecommendation();
   renderOutputEstimate();
 }
 
@@ -1720,10 +1775,12 @@ function newProject() {
   aiOneClickGeneratedAt = "";
   selectedTemplate = "taekwondo-class";
   templateAppliedAt = "";
+  templateRecommendation = getTemplateRecommendation(getAiTemplatePreset(selectedTemplate));
   if (captionEventInput) captionEventInput.value = "";
   if (captionDojangInput) captionDojangInput.value = "";
   if (captionToneInput) captionToneInput.value = captionTone;
   if (oneClickTemplateInput) oneClickTemplateInput.value = selectedTemplate;
+  renderTemplateRecommendation();
   if (oneClickToneInput) oneClickToneInput.value = captionTone;
   if (oneClickLengthInput) oneClickLengthInput.value = "normal";
   if (oneClickExcludeInput) oneClickExcludeInput.checked = true;
@@ -2759,6 +2816,32 @@ function getAiTemplatePreset(templateId = selectedTemplate) {
   return aiTemplatePresets.find(preset => preset.id === templateId) || aiTemplatePresets[0];
 }
 
+function getTemplateRecommendation(preset = getAiTemplatePreset()) {
+  return {
+    captionTone: preset.captionTone || "",
+    captionStyle: preset.captionStyle || "",
+    musicStyle: preset.musicStyle || "",
+    colorTheme: preset.colorTheme || "",
+    titleStyle: preset.titleStyle || "",
+    endingStyle: preset.endingStyle || ""
+  };
+}
+
+function renderTemplateRecommendation() {
+  if (!templateRecommendationPanel) return;
+  const preset = getAiTemplatePreset(selectedTemplate);
+  const recommendation = templateRecommendation || getTemplateRecommendation(preset);
+  templateRecommendationPanel.innerHTML = `
+    <strong>\ucd94\ucc9c \uc124\uc815</strong>
+    <dl>
+      <div><dt>\ubd84\uc704\uae30</dt><dd>${escapeHtml(preset.mood)}</dd></div>
+      <div><dt>\uc790\ub9c9 \ud1a4</dt><dd>${escapeHtml(recommendation.captionTone)}</dd></div>
+      <div><dt>\uc74c\uc545 \uc2a4\ud0c0\uc77c</dt><dd>${escapeHtml(recommendation.musicStyle)}</dd></div>
+      <div><dt>\ucd94\ucc9c \ube44\uc728</dt><dd>${escapeHtml(preset.recommendedRatio)}</dd></div>
+      <div><dt>\uc0c9\uc0c1 \ud14c\ub9c8</dt><dd>${escapeHtml(recommendation.colorTheme)}</dd></div>
+    </dl>`;
+}
+
 function normalizePresetEffect(effect = "kenburns") {
   if (effect === "kenburns") return "slowZoomIn";
   return photoEffectOptions.some(option => option.value === effect) ? effect : "slowZoomIn";
@@ -2783,6 +2866,7 @@ function isAiStoryboardEligible(photo, options = {}) {
 
 function createLocalAiStoryboard(options = {}) {
   const preset = getAiTemplatePreset(options.templateId || selectedTemplate);
+  const recommendation = getTemplateRecommendation(preset);
   const lengthLimits = { short: 8, normal: 16, long: Infinity };
   const maxScenes = lengthLimits[options.length || "normal"] || lengthLimits.normal;
   const eligible = photos
@@ -2824,7 +2908,14 @@ function createLocalAiStoryboard(options = {}) {
     scenes: [
       {
         type: "opening",
-        caption: preset.introText || openingCaptionInput.value || "\ud0dc\uad8c\ub3c4 \ud558\uc774\ub77c\uc774\ud2b8"
+        caption: preset.introText || openingCaptionInput.value || "\ud0dc\uad8c\ub3c4 \ud558\uc774\ub77c\uc774\ud2b8",
+        templateId: preset.id,
+        captionTone: recommendation.captionTone,
+        captionStyle: recommendation.captionStyle,
+        musicStyle: recommendation.musicStyle,
+        colorTheme: recommendation.colorTheme,
+        titleStyle: recommendation.titleStyle,
+        endingStyle: recommendation.endingStyle
       },
       ...ordered.map((item, index) => ({
         type: index < intro.length ? "intro" : index === ordered.length - 1 ? "ending" : "main",
@@ -2834,12 +2925,25 @@ function createLocalAiStoryboard(options = {}) {
         photoEffect: normalizePresetEffect(preset.defaultEffect),
         caption: preset.defaultCaption || "",
         templateId: preset.id,
+        captionTone: recommendation.captionTone,
+        captionStyle: recommendation.captionStyle,
+        musicStyle: recommendation.musicStyle,
+        colorTheme: recommendation.colorTheme,
+        titleStyle: recommendation.titleStyle,
+        endingStyle: recommendation.endingStyle,
         sceneSource: "ai",
         score: Math.round(item.score)
       })),
       {
         type: "ending",
-        caption: preset.endingText || endingCaptionInput.value || "\ud568\uaed8\ud55c \uc21c\uac04\uc744 \uae30\uc5b5\ud569\ub2c8\ub2e4"
+        caption: preset.endingText || endingCaptionInput.value || "\ud568\uaed8\ud55c \uc21c\uac04\uc744 \uae30\uc5b5\ud569\ub2c8\ub2e4",
+        templateId: preset.id,
+        captionTone: recommendation.captionTone,
+        captionStyle: recommendation.captionStyle,
+        musicStyle: recommendation.musicStyle,
+        colorTheme: recommendation.colorTheme,
+        titleStyle: recommendation.titleStyle,
+        endingStyle: recommendation.endingStyle
       }
     ]
   };
@@ -3071,6 +3175,7 @@ async function runAiOneClickProduction() {
 
   const options = getOneClickOptions();
   const preset = getAiTemplatePreset(options.templateId);
+  templateRecommendation = getTemplateRecommendation(preset);
   aiAnalyzeRunning = true;
   disableAiControls(true);
   try {
@@ -3106,7 +3211,9 @@ async function runAiOneClickProduction() {
     applyLocalAiStoryboard(storyboard);
     selectedTemplate = preset.id;
     templateAppliedAt = new Date().toISOString();
+    templateRecommendation = getTemplateRecommendation(preset);
     if (oneClickTemplateInput) oneClickTemplateInput.value = selectedTemplate;
+    renderTemplateRecommendation();
     applyPresetOutputRatio(preset);
 
     if (options.autoCaption) {
@@ -3125,7 +3232,8 @@ async function runAiOneClickProduction() {
         generatedAt: aiOneClickGeneratedAt,
         selectedTemplate,
         templatePresetVersion,
-        templateAppliedAt
+        templateAppliedAt,
+        templateRecommendation
       };
     }
     updateAiAnalyzeProgress(6, 6, "\uc644\ub8cc");
@@ -3585,6 +3693,8 @@ if (selectExcludedButton) selectExcludedButton.addEventListener("click", selectE
 if (aiOneClickButton) aiOneClickButton.addEventListener("click", runAiOneClickProduction);
 if (oneClickTemplateInput) oneClickTemplateInput.addEventListener("change", () => {
   selectedTemplate = getAiTemplatePreset(oneClickTemplateInput.value).id;
+  templateRecommendation = getTemplateRecommendation(getAiTemplatePreset(selectedTemplate));
+  renderTemplateRecommendation();
 });
 if (aiPhotoFilter) aiPhotoFilter.addEventListener("change", () => {
   activeAiPhotoFilter = aiPhotoFilter.value;
@@ -3807,6 +3917,8 @@ fetch("/health")
   .catch(() => { serverStatus.textContent = "localhost:4000"; });
 
 defaultTransitionInput.innerHTML = optionMarkup(transitionOptions, "fade");
+templateRecommendation = getTemplateRecommendation(getAiTemplatePreset(selectedTemplate));
+renderTemplateRecommendation();
 renderStudents();
 renderList();
 renderAuthState();
