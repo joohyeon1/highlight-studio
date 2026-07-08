@@ -760,8 +760,12 @@ function renderQueueJobs(jobs = [], activeJobId = "") {
   renderQueueList.innerHTML = jobs.map((job, index) => {
     const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
     const canCancel = ["queued", "preparing", "rendering"].includes(job.status);
+    const canOpen = job.status === "completed" && job.filename;
     const position = job.status === "queued" ? `대기 ${job.queuePosition || index + 1}번째` : `#${index + 1}`;
     const fileLabel = job.filename || job.currentPhotoName || "결과 파일 대기";
+    const engineLabel = job.encoderLabel || job.encoder || "";
+    const engineCodec = job.encoderCodec ? ` (${escapeHtml(job.encoderCodec)})` : "";
+    const engineText = engineLabel ? `엔진 ${escapeHtml(engineLabel)}${engineCodec}` : "";
     return `
       <article class="queue-job">
         <div>
@@ -771,6 +775,8 @@ function renderQueueJobs(jobs = [], activeJobId = "") {
             <span>생성 ${formatDateTime(job.createdAt)}</span>
             ${job.startedAt ? `<span>시작 ${formatDateTime(job.startedAt)}</span>` : ""}
             ${job.completedAt ? `<span>완료 ${formatDateTime(job.completedAt)}</span>` : ""}
+            ${engineText ? `<span>${engineText}</span>` : ""}
+            ${job.encoderFallback ? `<span>CPU 자동 전환</span>` : ""}
             ${job.error ? `<span>${escapeHtml(job.error)}</span>` : ""}
           </div>
           <div class="queue-job-progress">
@@ -780,6 +786,7 @@ function renderQueueJobs(jobs = [], activeJobId = "") {
         </div>
         <div class="queue-actions">
           <span class="status-badge ${escapeHtml(job.status)}">${renderStatusLabels[job.status] || job.status}</span>
+          ${canOpen ? `<button type="button" class="secondary-button" data-action="open-queue-output" data-filename="${escapeHtml(job.filename)}">파일 열기</button>` : ""}
           ${canCancel ? `<button type="button" class="secondary-button" data-action="cancel-queue-job" data-job-id="${escapeHtml(job.jobId)}">취소</button>` : ""}
         </div>
       </article>
@@ -3935,6 +3942,15 @@ renderQueueList.addEventListener("click", event => {
   if (!target) return;
   if (target.dataset.action === "cancel-queue-job") {
     cancelQueueJob(target.dataset.jobId);
+  }
+  if (target.dataset.action === "open-queue-output") {
+    const filename = target.dataset.filename;
+    setOutputPreview({
+      filename,
+      url: outputUrl(filename),
+      downloadUrl: outputDownloadUrl(filename)
+    });
+    loadOutputs(filename);
   }
 });
 refreshOutputsButton.addEventListener("click", () => {
