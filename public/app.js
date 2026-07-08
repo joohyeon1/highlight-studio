@@ -1541,7 +1541,10 @@ function updateRenderStatus(job = {}) {
   const total = Number(job.totalPhotos || 0);
   const currentName = job.currentPhotoName ? ` - ${job.currentPhotoName}` : "";
   renderPhotoText.textContent = total ? `\ud604\uc7ac \ucc98\ub9ac: ${current} / ${total}${currentName}` : "\ud604\uc7ac \ucc98\ub9ac \uc911\uc778 \uc0ac\uc9c4 \uc5c6\uc74c";
-  if (activeEncoderText && job.encoder) activeEncoderText.textContent = describeEncoder(job.encoder, job.encoderCodec);
+  if (activeEncoderText && job.encoder) {
+    const encoderText = describeEncoder(job.encoder, job.encoderCodec);
+    activeEncoderText.textContent = job.encoderFallback ? `${encoderText} - CPU 전환됨` : encoderText;
+  }
   renderLogLines(job.logs || []);
 }
 

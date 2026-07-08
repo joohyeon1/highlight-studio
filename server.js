@@ -308,6 +308,7 @@ function getQueuePosition(job) {
 
 function publicJob(job) {
   if (!job) return null;
+  const encoderInfo = RENDER_ENCODERS[job.encoder] || null;
   return {
     jobId: job.jobId,
     status: job.status,
@@ -325,6 +326,9 @@ function publicJob(job) {
     encoderRequested: job.encoderRequested || "auto",
     encoder: job.encoder || "",
     encoderCodec: job.encoderCodec || "",
+    encoderLabel: job.encoderLabel || encoderInfo?.label || "",
+    encoderFallback: Boolean(job.encoderFallback),
+    encoderFallbackMessage: job.encoderFallbackMessage || "",
     queuePosition: getQueuePosition(job),
     createdAt: job.createdAt,
     startedAt: job.startedAt,
@@ -350,6 +354,8 @@ function publicQueue() {
       filename: job.filename,
       encoder: job.encoder || "",
       encoderCodec: job.encoderCodec || "",
+      encoderLabel: job.encoderLabel || RENDER_ENCODERS[job.encoder]?.label || "",
+      encoderFallback: Boolean(job.encoderFallback),
       failedCount: (job.failedPhotos || []).length,
       error: job.error
     }));
@@ -466,6 +472,7 @@ async function detectRenderEncoders(options = {}) {
     ok: ffmpegReady,
     selected: auto.value,
     selectedCodec: auto.codec,
+    selectedLabel: auto.label,
     encoders: available,
     checkedAt: new Date().toISOString()
   };
@@ -493,6 +500,19 @@ async function resolveRenderEncoder(requestedValue, job) {
   }
   pushJobLog(job, `${RENDER_ENCODERS[requested]?.label || requested} 미지원 - CPU 렌더링으로 전환`);
   return { requested, selected: "cpu", detected };
+}
+
+async function logStartupEncoderDetection() {
+  try {
+    const detected = await detectRenderEncoders();
+    const gpuList = detected.encoders
+      .filter(encoder => encoder.value !== "cpu" && encoder.available)
+      .map(encoder => `${encoder.label}(${encoder.codec})`);
+    console.log(`Render engine auto: ${detected.selectedLabel || "CPU"} (${detected.selectedCodec || "libx264"})`);
+    console.log(`GPU encoders: ${gpuList.length ? gpuList.join(", ") : "none - CPU fallback"}`);
+  } catch (error) {
+    console.log(`Render encoder detection failed: ${error.message || "unknown error"}; CPU fallback will be used.`);
+  }
 }
 
 function getEncoderArgs(encoderValue, quality) {
@@ -935,6 +955,9 @@ async function createRenderFromProject(project, files, job) {
   job.encoderRequested = encoderPlan.requested;
   job.encoder = encoderPlan.selected;
   job.encoderCodec = RENDER_ENCODERS[encoderPlan.selected]?.codec || "libx264";
+  job.encoderLabel = RENDER_ENCODERS[encoderPlan.selected]?.label || "CPU";
+  job.encoderFallback = false;
+  job.encoderFallbackMessage = "";
   job.failedPhotos = [];
   pushJobLog(job, `현재 사용 인코더: ${RENDER_ENCODERS[encoderPlan.selected]?.label || "CPU"} (${job.encoderCodec})`);
   const outputPath = uniqueOutputPath(outputOptions.fileName || `${safeName(project.video?.title || "highlight-studio")}.mp4`);
@@ -984,9 +1007,13 @@ async function createRenderFromProject(project, files, job) {
       } catch (error) {
         if (job?.canceled) throw error;
         if (job.encoder !== "cpu") {
-          pushJobLog(job, `${job.encoderCodec} 인코딩 실패 - CPU(libx264)로 자동 재시도`);
+          job.encoderFallback = true;
+          job.encoderFallbackMessage = "GPU 사용 불가. CPU로 전환하여 계속 렌더링합니다.";
+          pushJobLog(job, `${job.encoderCodec} 인코딩 실패`);
+          pushJobLog(job, job.encoderFallbackMessage);
           job.encoder = "cpu";
           job.encoderCodec = "libx264";
+          job.encoderLabel = "CPU";
           try {
             await runFfmpeg([
               "-y",
@@ -1210,6 +1237,7 @@ app.get("/api/render/encoders", async (req, res) => {
       ok: true,
       selected: detected.selected,
       selectedCodec: detected.selectedCodec,
+      selectedLabel: detected.selectedLabel,
       checkedAt: detected.checkedAt,
       encoders: detected.encoders
     });
@@ -1563,6 +1591,7 @@ function startServer(port = PORT) {
     console.log(`Highlight Studio listening: http://localhost:${port}`);
     console.log(`Uploads: ${UPLOAD_DIR}`);
     console.log(`Outputs: ${OUTPUT_DIR}`);
+    logStartupEncoderDetection();
   });
 }
 
