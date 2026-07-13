@@ -133,6 +133,11 @@ Legacy compatibility:
 POST /api/videos
 ```
 
+`POST /api/videos` is deprecated and remains only for existing integrations.
+New integrations should use `POST /api/render`, which supports progress,
+cancellation, output settings, and the render queue. The removal schedule for
+`POST /api/videos` is not yet set.
+
 ## Security Checks
 
 - Output download/delete only accepts `.mp4` files in `outputs/`.

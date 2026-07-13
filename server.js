@@ -1540,7 +1540,13 @@ app.post("/api/videos", upload.array("photos", MAX_PHOTOS), async (req, res) => 
       title: req.body.title,
       secondsPerPhoto: req.body.secondsPerPhoto
     });
-    res.status(201).json({ ok: true, video: result });
+    res.status(201).json({
+      ok: true,
+      video: result,
+      deprecated: true,
+      replacement: "/api/render",
+      message: "POST /api/videos is deprecated. Use POST /api/render for new integrations."
+    });
   } catch (error) {
     for (const file of req.files || []) fs.rm(file.path, { force: true }, () => {});
     res.status(500).json({ ok: false, error: error.message || "영상 생성에 실패했습니다." });
