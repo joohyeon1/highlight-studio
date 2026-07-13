@@ -50,6 +50,8 @@ Open:
 http://localhost:4000
 ```
 
+The Express server binds to the local loopback interface only (`127.0.0.1`), so Highlight Studio is not exposed as a public network server.
+
 PowerShell note:
 
 ```powershell

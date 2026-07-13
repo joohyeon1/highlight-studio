@@ -6,7 +6,7 @@ const ROOT_DIR = path.join(__dirname, "..");
 const PACKAGE_JSON = require(path.join(ROOT_DIR, "package.json"));
 const APP_VERSION = PACKAGE_JSON.version;
 const APP_PORT = Number(process.env.PORT || 4000);
-const APP_URL = `http://localhost:${APP_PORT}`;
+const APP_URL = `http://127.0.0.1:${APP_PORT}`;
 const APP_PROTOCOL = "highlightstudio";
 
 if (process.env.HIGHLIGHT_DESKTOP_USER_DATA) {
@@ -159,8 +159,7 @@ function createSplashWindow() {
     resizable: false,
     show: false,
     backgroundColor: "#0f172a",
-    icon: path.join(ROOT_DIR, "build", "icon.ico"),
-    webPreferences: { sandbox: true }
+    icon: path.join(ROOT_DIR, "build", "icon.ico")
   });
   updateSplash("설정 불러오는 중", 15);
   splashWindow.once("ready-to-show", () => splashWindow.show());

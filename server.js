@@ -8,6 +8,7 @@ const multer = require("multer");
 loadLocalEnv();
 
 const PORT = Number(process.env.PORT || 4000);
+const LOCAL_BIND_HOST = "127.0.0.1";
 const APP_VERSION = "1.0.0";
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
@@ -1744,8 +1745,9 @@ app.use((error, _req, res, _next) => {
 });
 
 function startServer(port = PORT) {
-  const server = app.listen(port, () => {
+  const server = app.listen(port, LOCAL_BIND_HOST, () => {
     console.log(`Highlight Studio listening: http://localhost:${port}`);
+    console.log(`Local bind: ${LOCAL_BIND_HOST}:${port}`);
     console.log(`Uploads: ${UPLOAD_DIR}`);
     console.log(`Outputs: ${OUTPUT_DIR}`);
     logStartupEncoderDetection();
