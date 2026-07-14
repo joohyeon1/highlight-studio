@@ -58,6 +58,9 @@ const {
 const {
   registerProjectSaveRoutes
 } = require("./server/routes/project-save-routes");
+const {
+  registerRenderReadRoutes
+} = require("./server/routes/render-read-routes");
 
 loadLocalEnv();
 
@@ -100,6 +103,9 @@ const getProjectAutosave = () => projectAutosave;
 const setProjectAutosave = value => {
   projectAutosave = value;
 };
+const getRenderJob = jobId => renderJobs.get(jobId);
+const getActiveRenderJobId = () => activeRenderJobId;
+const getQueuedRenderCount = () => renderQueue.filter(job => job.status === "queued").length;
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -893,20 +899,13 @@ registerSystemRoutes(app, {
   buildLicenseStatus
 });
 
-app.get("/api/render/encoders", async (req, res) => {
-  try {
-    const detected = await detectRenderEncoders({ force: req.query.refresh === "1" });
-    res.json({
-      ok: true,
-      selected: detected.selected,
-      selectedCodec: detected.selectedCodec,
-      selectedLabel: detected.selectedLabel,
-      checkedAt: detected.checkedAt,
-      encoders: detected.encoders
-    });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: error.message || "렌더링 인코더를 확인하지 못했습니다." });
-  }
+registerRenderReadRoutes(app, {
+  detectRenderEncoders,
+  getRenderJob,
+  getActiveRenderJobId,
+  getQueuedRenderCount,
+  publicJob,
+  publicQueue
 });
 
 registerAiRoutes(app, {
@@ -1011,21 +1010,6 @@ app.post("/api/render", upload.array("photos", MAX_PHOTOS), async (req, res) => 
       error: error.message || "MP4 생성에 실패했습니다."
     });
   }
-});
-
-app.get("/api/render/status/:jobId", (req, res) => {
-  const job = renderJobs.get(req.params.jobId);
-  if (!job) return res.status(404).json({ ok: false, error: "렌더링 작업을 찾을 수 없습니다." });
-  res.json({ ok: true, job: publicJob(job) });
-});
-
-app.get("/api/render/queue", (_req, res) => {
-  res.json({
-    ok: true,
-    activeJobId: activeRenderJobId,
-    queuedCount: renderQueue.filter(job => job.status === "queued").length,
-    jobs: publicQueue()
-  });
 });
 
 registerOutputReadRoutes(app, {
