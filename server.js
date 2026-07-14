@@ -35,6 +35,21 @@ const {
   createUploadMiddleware
 } = require("./server/upload-middleware");
 const {
+  configureRenderJobStore,
+  getRenderJobs,
+  addRenderJob,
+  getRenderJob,
+  deleteRenderJob,
+  getRenderQueue,
+  getActiveRenderJobId,
+  setActiveRenderJobId,
+  clearActiveRenderJobId,
+  getQueuedRenderCount,
+  getQueuePosition,
+  publicJob,
+  publicQueue
+} = require("./server/render-job-store");
+const {
   registerSystemRoutes
 } = require("./server/routes/system-routes");
 const {
@@ -91,9 +106,6 @@ const RENDER_ENCODERS = {
   qsv: { value: "qsv", label: "Intel Quick Sync", codec: "h264_qsv", vendor: "Intel" },
   amf: { value: "amf", label: "AMD AMF", codec: "h264_amf", vendor: "AMD" }
 };
-const renderJobs = new Map();
-const renderQueue = [];
-let activeRenderJobId = null;
 let encoderDetectionCache = null;
 let projectAutosave = null;
 const recentProjects = [];
@@ -103,9 +115,7 @@ const getProjectAutosave = () => projectAutosave;
 const setProjectAutosave = value => {
   projectAutosave = value;
 };
-const getRenderJob = jobId => renderJobs.get(jobId);
-const getActiveRenderJobId = () => activeRenderJobId;
-const getQueuedRenderCount = () => renderQueue.filter(job => job.status === "queued").length;
+configureRenderJobStore({ renderEncoders: RENDER_ENCODERS });
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -187,72 +197,11 @@ function updateJob(job, patch = {}) {
   Object.assign(job, patch, { updatedAt: new Date().toISOString() });
 }
 
-function getQueuePosition(job) {
-  if (!job || job.status !== "queued") return 0;
-  const index = renderQueue.findIndex(item => item.jobId === job.jobId);
-  return index >= 0 ? index + 1 : 0;
-}
-
-function publicJob(job) {
-  if (!job) return null;
-  const encoderInfo = RENDER_ENCODERS[job.encoder] || null;
-  return {
-    jobId: job.jobId,
-    status: job.status,
-    progress: job.progress,
-    currentPhoto: job.currentPhoto,
-    currentPhotoName: job.currentPhotoName,
-    totalPhotos: job.totalPhotos,
-    filename: job.filename,
-    downloadUrl: job.downloadUrl,
-    durationSeconds: job.durationSeconds,
-    bytes: job.bytes,
-    error: job.error,
-    failedPhotos: job.failedPhotos || [],
-    logs: job.logs,
-    encoderRequested: job.encoderRequested || "auto",
-    encoder: job.encoder || "",
-    encoderCodec: job.encoderCodec || "",
-    encoderLabel: job.encoderLabel || encoderInfo?.label || "",
-    encoderFallback: Boolean(job.encoderFallback),
-    encoderFallbackMessage: job.encoderFallbackMessage || "",
-    queuePosition: getQueuePosition(job),
-    createdAt: job.createdAt,
-    startedAt: job.startedAt,
-    completedAt: job.completedAt,
-    updatedAt: job.updatedAt
-  };
-}
-
-function publicQueue() {
-  return Array.from(renderJobs.values())
-    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-    .map(job => ({
-      jobId: job.jobId,
-      status: job.status,
-      progress: job.progress,
-      currentPhoto: job.currentPhoto,
-      currentPhotoName: job.currentPhotoName,
-      totalPhotos: job.totalPhotos,
-      queuePosition: getQueuePosition(job),
-      createdAt: job.createdAt,
-      startedAt: job.startedAt,
-      completedAt: job.completedAt,
-      filename: job.filename,
-      encoder: job.encoder || "",
-      encoderCodec: job.encoderCodec || "",
-      encoderLabel: job.encoderLabel || RENDER_ENCODERS[job.encoder]?.label || "",
-      encoderFallback: Boolean(job.encoderFallback),
-      failedCount: (job.failedPhotos || []).length,
-      error: job.error
-    }));
-}
-
 function scheduleJobCleanup(jobId) {
   setTimeout(() => {
-    const job = renderJobs.get(jobId);
+    const job = getRenderJob(jobId);
     if (job && ["completed", "failed", "canceled"].includes(job.status)) {
-      renderJobs.delete(jobId);
+      deleteRenderJob(jobId);
     }
   }, 30 * 60 * 1000);
 }
@@ -771,26 +720,27 @@ async function createRenderFromProject(project, files, job) {
 }
 
 function removeQueuedJob(jobId) {
-  const index = renderQueue.findIndex(item => item.jobId === jobId);
-  if (index >= 0) return renderQueue.splice(index, 1)[0];
+  const queue = getRenderQueue();
+  const index = queue.findIndex(item => item.jobId === jobId);
+  if (index >= 0) return queue.splice(index, 1)[0];
   return null;
 }
 
 function enqueueRenderJob(job) {
-  renderQueue.push(job);
+  getRenderQueue().push(job);
   pushJobLog(job, `렌더링 대기열 추가: ${getQueuePosition(job)}번째`);
   processRenderQueue();
 }
 
 function processRenderQueue() {
-  if (activeRenderJobId) return;
-  const nextJob = renderQueue.shift();
+  if (getActiveRenderJobId()) return;
+  const nextJob = getRenderQueue().shift();
   if (!nextJob) return;
   if (nextJob.canceled || nextJob.status === "canceled") {
     process.nextTick(processRenderQueue);
     return;
   }
-  activeRenderJobId = nextJob.jobId;
+  setActiveRenderJobId(nextJob.jobId);
   pushJobLog(nextJob, "대기열에서 렌더링 시작");
   createRenderFromProject(nextJob.project, nextJob.files || [], nextJob)
     .then(result => {
@@ -818,7 +768,7 @@ function processRenderQueue() {
       scheduleJobCleanup(nextJob.jobId);
     })
     .finally(() => {
-      activeRenderJobId = null;
+      clearActiveRenderJobId();
       processRenderQueue();
     });
 }
@@ -996,7 +946,7 @@ app.post("/api/render", upload.array("photos", MAX_PHOTOS), async (req, res) => 
       completedAt: "",
       updatedAt: now
     };
-    renderJobs.set(jobId, job);
+    addRenderJob(job);
     enqueueRenderJob(job);
     res.status(202).json({
       ok: true,
@@ -1036,7 +986,7 @@ registerOutputWriteRoutes(app, {
 });
 
 app.post("/api/render/cancel/:jobId", (req, res) => {
-  const job = renderJobs.get(req.params.jobId);
+  const job = getRenderJob(req.params.jobId);
   if (!job) return res.status(404).json({ ok: false, error: "렌더링 작업을 찾을 수 없습니다." });
   if (["completed", "failed", "canceled"].includes(job.status)) {
     return res.json({ ok: true, job: publicJob(job) });
@@ -1062,7 +1012,7 @@ app.post("/api/render/cancel/:jobId", (req, res) => {
 });
 
 function cancelAllRenderJobs(reason = "프로그램 종료") {
-  for (const job of renderJobs.values()) {
+  for (const job of getRenderJobs().values()) {
     if (["completed", "failed", "canceled"].includes(job.status)) continue;
     job.canceled = true;
     pushJobLog(job, reason);
@@ -1074,8 +1024,8 @@ function cancelAllRenderJobs(reason = "프로그램 종료") {
     }
     for (const file of job.files || []) fs.rm(file.path, { force: true }, () => {});
   }
-  renderQueue.splice(0);
-  activeRenderJobId = null;
+  getRenderQueue().splice(0);
+  clearActiveRenderJobId();
 }
 
 app.use((error, _req, res, _next) => {
