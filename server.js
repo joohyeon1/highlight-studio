@@ -3,7 +3,6 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const express = require("express");
-const multer = require("multer");
 const {
   clampScore,
   normalizeAiPhoto,
@@ -32,6 +31,9 @@ const {
   decodeUploadName,
   normalizeUploadedFiles
 } = require("./server/upload-file-helpers");
+const {
+  createUploadMiddleware
+} = require("./server/upload-middleware");
 const {
   registerSystemRoutes
 } = require("./server/routes/system-routes");
@@ -162,24 +164,10 @@ function openLocalPath(targetPath) {
   child.unref();
 }
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || "").toLowerCase() || ".jpg";
-    cb(null, `${makeId("photo")}${ext}`);
-  }
-});
-
-const upload = multer({
-  storage,
-  limits: {
-    files: MAX_PHOTOS,
-    fileSize: 30 * 1024 * 1024
-  },
-  fileFilter: (_req, file, cb) => {
-    if (/^image\/(jpeg|png|webp)$/i.test(file.mimetype || "")) return cb(null, true);
-    cb(new Error("JPG, PNG, WEBP 이미지만 업로드할 수 있습니다."));
-  }
+const upload = createUploadMiddleware({
+  uploadDir: UPLOAD_DIR,
+  maxPhotos: MAX_PHOTOS,
+  makeId
 });
 
 function pushJobLog(job, message) {
