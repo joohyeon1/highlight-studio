@@ -50,6 +50,12 @@ const {
   publicQueue
 } = require("./server/render-job-store");
 const {
+  configureRenderJobUtils,
+  pushJobLog,
+  updateJob,
+  scheduleJobCleanup
+} = require("./server/render-job-utils");
+const {
   registerSystemRoutes
 } = require("./server/routes/system-routes");
 const {
@@ -116,6 +122,10 @@ const setProjectAutosave = value => {
   projectAutosave = value;
 };
 configureRenderJobStore({ renderEncoders: RENDER_ENCODERS });
+configureRenderJobUtils({
+  getRenderJob,
+  deleteRenderJob
+});
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -185,26 +195,6 @@ const upload = createUploadMiddleware({
   maxPhotos: MAX_PHOTOS,
   makeId
 });
-
-function pushJobLog(job, message) {
-  if (!job) return;
-  job.logs.push({ time: new Date().toISOString(), message });
-  if (job.logs.length > 300) job.logs.shift();
-}
-
-function updateJob(job, patch = {}) {
-  if (!job) return;
-  Object.assign(job, patch, { updatedAt: new Date().toISOString() });
-}
-
-function scheduleJobCleanup(jobId) {
-  setTimeout(() => {
-    const job = getRenderJob(jobId);
-    if (job && ["completed", "failed", "canceled"].includes(job.status)) {
-      deleteRenderJob(jobId);
-    }
-  }, 30 * 60 * 1000);
-}
 
 function runFfmpeg(args, job, options = {}) {
   return new Promise((resolve, reject) => {
