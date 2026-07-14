@@ -27,6 +27,11 @@ const {
   sanitizeTemplatePayload,
   getAllTemplates
 } = require("./server/template-helpers");
+const {
+  displayFileName,
+  decodeUploadName,
+  normalizeUploadedFiles
+} = require("./server/upload-file-helpers");
 
 loadLocalEnv();
 
@@ -144,31 +149,6 @@ function pushJobLog(job, message) {
   if (!job) return;
   job.logs.push({ time: new Date().toISOString(), message });
   if (job.logs.length > 300) job.logs.shift();
-}
-
-function displayFileName(value, fallback = "photo") {
-  return String(value || fallback)
-    .replace(/[\r\n\t]/g, " ")
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
-    .trim()
-    .slice(0, 160) || fallback;
-}
-
-function decodeUploadName(value) {
-  const name = String(value || "");
-  if (!name || /[가-힣]/.test(name)) return name;
-  try {
-    const decoded = Buffer.from(name, "latin1").toString("utf8");
-    if (decoded && !decoded.includes("\uFFFD") && /[가-힣]/.test(decoded)) return decoded;
-  } catch (_) {}
-  return name;
-}
-
-function normalizeUploadedFiles(files = []) {
-  for (const file of files) {
-    file.originalname = decodeUploadName(file.originalname);
-  }
-  return files;
 }
 
 function updateJob(job, patch = {}) {
