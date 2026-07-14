@@ -50,6 +50,9 @@ const {
 const {
   registerProjectReadRoutes
 } = require("./server/routes/project-read-routes");
+const {
+  registerProjectLoadRoutes
+} = require("./server/routes/project-load-routes");
 
 loadLocalEnv();
 
@@ -936,14 +939,10 @@ app.post("/api/project/save", async (req, res) => {
   }
 });
 
-app.post("/api/project/load", (req, res) => {
-  try {
-    const project = validateProjectDocument(req.body?.project || req.body);
-    const summary = rememberProject(project, "load");
-    res.json({ ok: true, project, recent: summary });
-  } catch (error) {
-    res.status(400).json({ ok: false, error: error.message || "프로젝트 불러오기에 실패했습니다." });
-  }
+registerProjectLoadRoutes(app, {
+  validateProjectDocument,
+  readProjectBackup,
+  rememberProject
 });
 
 app.post("/api/project/autosave", async (req, res) => {
@@ -965,16 +964,6 @@ registerProjectReadRoutes(app, {
   getRecentProjects,
   getProjectAutosave,
   listProjectBackups
-});
-
-app.post("/api/project/backups/:backupId/restore", async (req, res) => {
-  try {
-    const project = await readProjectBackup(req.params.backupId);
-    const summary = rememberProject(project, "backup-restore");
-    res.json({ ok: true, project, recent: summary });
-  } catch (error) {
-    res.status(400).json({ ok: false, error: error.message || "프로젝트 백업을 복원하지 못했습니다." });
-  }
 });
 
 registerTemplateRoutes(app, {
