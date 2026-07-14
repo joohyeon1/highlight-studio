@@ -61,6 +61,9 @@ const {
   enqueueRenderJob
 } = require("./server/render-queue-operations");
 const {
+  createRenderQueueController
+} = require("./server/render-queue-controller");
+const {
   registerSystemRoutes
 } = require("./server/routes/system-routes");
 const {
@@ -131,12 +134,6 @@ configureRenderJobUtils({
   getRenderJob,
   deleteRenderJob
 });
-configureRenderQueueOperations({
-  getRenderQueue,
-  getQueuePosition,
-  pushJobLog,
-  processRenderQueue
-});
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -206,6 +203,10 @@ const upload = createUploadMiddleware({
   maxPhotos: MAX_PHOTOS,
   makeId
 });
+
+function cleanupUploadedFiles(files = []) {
+  for (const file of files || []) fs.rm(file.path, { force: true }, () => {});
+}
 
 function runFfmpeg(args, job, options = {}) {
   return new Promise((resolve, reject) => {
@@ -720,46 +721,24 @@ async function createRenderFromProject(project, files, job) {
   }
 }
 
-function processRenderQueue() {
-  if (getActiveRenderJobId()) return;
-  const nextJob = getRenderQueue().shift();
-  if (!nextJob) return;
-  if (nextJob.canceled || nextJob.status === "canceled") {
-    process.nextTick(processRenderQueue);
-    return;
-  }
-  setActiveRenderJobId(nextJob.jobId);
-  pushJobLog(nextJob, "대기열에서 렌더링 시작");
-  createRenderFromProject(nextJob.project, nextJob.files || [], nextJob)
-    .then(result => {
-      if (nextJob.canceled) return;
-      updateJob(nextJob, {
-        status: "completed",
-        progress: 100,
-        filename: result.filename,
-        downloadUrl: result.downloadUrl,
-        durationSeconds: result.durationSeconds,
-        bytes: result.bytes,
-        completedAt: new Date().toISOString()
-      });
-      scheduleJobCleanup(nextJob.jobId);
-    })
-    .catch(error => {
-      updateJob(nextJob, {
-        status: nextJob.canceled ? "canceled" : "failed",
-        error: error.message || "MP4 생성에 실패했습니다.",
-        progress: nextJob.canceled ? nextJob.progress : 0,
-        completedAt: new Date().toISOString()
-      });
-      pushJobLog(nextJob, `오류 메시지: ${nextJob.error}`);
-      for (const file of nextJob.files || []) fs.rm(file.path, { force: true }, () => {});
-      scheduleJobCleanup(nextJob.jobId);
-    })
-    .finally(() => {
-      clearActiveRenderJobId();
-      processRenderQueue();
-    });
-}
+const { processRenderQueue } = createRenderQueueController({
+  getRenderQueue,
+  getActiveRenderJobId,
+  setActiveRenderJobId,
+  clearActiveRenderJobId,
+  pushJobLog,
+  updateJob,
+  scheduleJobCleanup,
+  createRenderFromProject,
+  cleanupUploadedFiles
+});
+
+configureRenderQueueOperations({
+  getRenderQueue,
+  getQueuePosition,
+  pushJobLog,
+  processRenderQueue
+});
 
 async function createVideoFromPhotos(files, options = {}) {
   if (!files.length) throw new Error("사진을 1장 이상 업로드해 주세요.");
