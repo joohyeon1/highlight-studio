@@ -47,6 +47,9 @@ const {
 const {
   registerOutputWriteRoutes
 } = require("./server/routes/output-write-routes");
+const {
+  registerProjectReadRoutes
+} = require("./server/routes/project-read-routes");
 
 loadLocalEnv();
 
@@ -83,6 +86,9 @@ let activeRenderJobId = null;
 let encoderDetectionCache = null;
 let projectAutosave = null;
 const recentProjects = [];
+
+const getRecentProjects = () => recentProjects;
+const getProjectAutosave = () => projectAutosave;
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -940,10 +946,6 @@ app.post("/api/project/load", (req, res) => {
   }
 });
 
-app.get("/api/project/recent", (_req, res) => {
-  res.json({ ok: true, recent: recentProjects });
-});
-
 app.post("/api/project/autosave", async (req, res) => {
   try {
     const project = validateProjectDocument(req.body?.project || req.body);
@@ -959,17 +961,10 @@ app.post("/api/project/autosave", async (req, res) => {
   }
 });
 
-app.get("/api/project/autosave", (_req, res) => {
-  if (!projectAutosave) return res.json({ ok: true, autosave: null });
-  res.json({ ok: true, autosave: projectAutosave.summary, project: projectAutosave.project, savedAt: projectAutosave.savedAt });
-});
-
-app.get("/api/project/backups", async (_req, res) => {
-  try {
-    res.json({ ok: true, backups: await listProjectBackups() });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: error.message || "프로젝트 백업 목록을 불러오지 못했습니다." });
-  }
+registerProjectReadRoutes(app, {
+  getRecentProjects,
+  getProjectAutosave,
+  listProjectBackups
 });
 
 app.post("/api/project/backups/:backupId/restore", async (req, res) => {
