@@ -56,6 +56,11 @@ const {
   scheduleJobCleanup
 } = require("./server/render-job-utils");
 const {
+  configureRenderQueueOperations,
+  removeQueuedJob,
+  enqueueRenderJob
+} = require("./server/render-queue-operations");
+const {
   registerSystemRoutes
 } = require("./server/routes/system-routes");
 const {
@@ -125,6 +130,12 @@ configureRenderJobStore({ renderEncoders: RENDER_ENCODERS });
 configureRenderJobUtils({
   getRenderJob,
   deleteRenderJob
+});
+configureRenderQueueOperations({
+  getRenderQueue,
+  getQueuePosition,
+  pushJobLog,
+  processRenderQueue
 });
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -707,19 +718,6 @@ async function createRenderFromProject(project, files, job) {
     fs.rm(workDir, { recursive: true, force: true }, () => {});
     pushJobLog(job, "임시 파일 정리 완료");
   }
-}
-
-function removeQueuedJob(jobId) {
-  const queue = getRenderQueue();
-  const index = queue.findIndex(item => item.jobId === jobId);
-  if (index >= 0) return queue.splice(index, 1)[0];
-  return null;
-}
-
-function enqueueRenderJob(job) {
-  getRenderQueue().push(job);
-  pushJobLog(job, `렌더링 대기열 추가: ${getQueuePosition(job)}번째`);
-  processRenderQueue();
 }
 
 function processRenderQueue() {
