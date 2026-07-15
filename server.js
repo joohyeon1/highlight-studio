@@ -67,6 +67,9 @@ const {
   createFfmpegEngine
 } = require("./server/ffmpeg-engine");
 const {
+  createLegacyVideoRenderer
+} = require("./server/legacy-video-renderer");
+const {
   createRenderExecutor
 } = require("./server/render-executor");
 const {
@@ -238,6 +241,16 @@ function safeOutputFileName(value) {
   return `${base}.mp4`;
 }
 
+const { createVideoFromPhotos } = createLegacyVideoRenderer({
+  uploadDir: UPLOAD_DIR,
+  outputDir: OUTPUT_DIR,
+  photoSeconds: PHOTO_SECONDS,
+  makeId,
+  safeName,
+  runFfmpeg,
+  ffmpegListPath
+});
+
 function parseProjectPayload(value) {
   if (!value) throw new Error("프로젝트 데이터가 없습니다.");
   const parsed = JSON.parse(value);
@@ -341,66 +354,6 @@ configureRenderQueueOperations({
   pushJobLog,
   processRenderQueue
 });
-
-async function createVideoFromPhotos(files, options = {}) {
-  if (!files.length) throw new Error("사진을 1장 이상 업로드해 주세요.");
-
-  const jobId = makeId("job");
-  const workDir = path.join(UPLOAD_DIR, jobId);
-  fs.mkdirSync(workDir, { recursive: true });
-
-  const title = safeName(options.title || "Highlight Studio");
-  const outputName = `${title}-${Date.now().toString(36)}.mp4`;
-  const outputPath = path.join(OUTPUT_DIR, outputName);
-  const segmentPaths = [];
-  const duration = Math.max(1, Math.min(10, Number(options.secondsPerPhoto || PHOTO_SECONDS) || PHOTO_SECONDS));
-
-  try {
-    for (const [index, file] of files.entries()) {
-      const segmentPath = path.join(workDir, `segment-${String(index + 1).padStart(3, "0")}.mp4`);
-      await runFfmpeg([
-        "-y",
-        "-loop", "1",
-        "-t", String(duration),
-        "-i", file.path,
-        "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
-        "-r", "30",
-        "-an",
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        segmentPath
-      ]);
-      segmentPaths.push(segmentPath);
-    }
-
-    const listPath = path.join(workDir, "segments.txt");
-    fs.writeFileSync(listPath, segmentPaths.map(item => `file '${ffmpegListPath(item)}'`).join("\n"), "utf8");
-
-    await runFfmpeg([
-      "-y",
-      "-f", "concat",
-      "-safe", "0",
-      "-i", listPath,
-      "-c", "copy",
-      outputPath
-    ]);
-
-    const stat = fs.statSync(outputPath);
-    return {
-      id: jobId,
-      filename: outputName,
-      downloadUrl: `/outputs/${encodeURIComponent(outputName)}`,
-      photoCount: files.length,
-      durationSeconds: files.length * duration,
-      bytes: stat.size
-    };
-  } finally {
-    for (const file of files) {
-      fs.rm(file.path, { force: true }, () => {});
-    }
-    fs.rm(workDir, { recursive: true, force: true }, () => {});
-  }
-}
 
 app.use(licenseGate);
 app.use(express.json({ limit: "10mb" }));
