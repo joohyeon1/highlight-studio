@@ -20,6 +20,8 @@ let serverModule;
 let serverInstance;
 let settings;
 let ownsInternalServer = false;
+let allowQuit = false;
+let quitInProgress = false;
 
 const START_FAILED_MESSAGE = [
   "Highlight Studio를 실행할 수 없습니다.",
@@ -503,14 +505,23 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", event => {
   logApp("Highlight Studio desktop quitting");
-  try {
-    serverModule?.cancelAllRenderJobs?.("프로그램 종료로 렌더링 취소");
-  } catch (error) {
-    logError(error);
-  }
-  if (ownsInternalServer && serverInstance) serverInstance.close();
+  if (allowQuit) return;
+  event.preventDefault();
+  if (quitInProgress) return;
+  quitInProgress = true;
+  const shutdown = serverModule?.shutdownServer
+    ? serverModule.shutdownServer(ownsInternalServer ? serverInstance : null, "electron-before-quit")
+    : Promise.resolve();
+  shutdown
+    .catch(error => {
+      logError(error);
+    })
+    .finally(() => {
+      allowQuit = true;
+      app.quit();
+    });
 });
 
 process.on("uncaughtException", error => {

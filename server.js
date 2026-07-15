@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { createApplication } = require("./server/bootstrap");
+const { createShutdownManager } = require("./server/shutdown-manager");
 
 loadLocalEnv();
 
@@ -17,6 +18,9 @@ const application = createApplication({
 
 const { app, cancelAllRenderJobs, logStartupEncoderDetection, paths } = application;
 const { UPLOAD_DIR, OUTPUT_DIR } = paths;
+const { shutdownServer, isShuttingDown } = createShutdownManager({
+  cancelAllRenderJobs
+});
 
 function loadLocalEnv() {
   const envPath = path.join(__dirname, ".env");
@@ -58,13 +62,27 @@ function startServer(port = PORT) {
 }
 
 if (require.main === module) {
-  startServer(PORT);
+  const serverInstance = startServer(PORT);
+  const handleSignal = signal => {
+    shutdownServer(serverInstance, signal)
+      .then(() => {
+        process.exitCode = 0;
+      })
+      .catch(error => {
+        console.error(`Highlight Studio 종료 실패: ${error.message || error}`);
+        process.exitCode = 1;
+      });
+  };
+  process.once("SIGINT", handleSignal);
+  process.once("SIGTERM", handleSignal);
 }
 
 module.exports = {
   app,
   startServer,
   cancelAllRenderJobs,
+  shutdownServer,
+  isShuttingDown,
   PORT,
   UPLOAD_DIR,
   OUTPUT_DIR
