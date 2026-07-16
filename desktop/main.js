@@ -46,13 +46,43 @@ function registerAppProtocol() {
   }
 }
 
+function parseHighlightStudioProtocolUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  if (raw.toLowerCase() === `${APP_PROTOCOL}:open`) {
+    return { action: "open", raw };
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch (_) {
+    return null;
+  }
+
+  if (parsed.protocol !== `${APP_PROTOCOL}:`) return null;
+  if (parsed.search || parsed.hash) return null;
+
+  const host = String(parsed.hostname || "").toLowerCase();
+  const pathname = String(parsed.pathname || "").replace(/^\/+/, "").toLowerCase();
+  if (host === "open" && !pathname) return { action: "open", raw };
+  if (!host && pathname === "open") return { action: "open", raw };
+  return null;
+}
+
 function isHighlightStudioProtocolUrl(value) {
-  return String(value || "").toLowerCase().startsWith(`${APP_PROTOCOL}://`);
+  return Boolean(parseHighlightStudioProtocolUrl(value));
+}
+
+function findHighlightStudioProtocolUrl(argv = []) {
+  return argv.find(isHighlightStudioProtocolUrl);
 }
 
 function focusMainWindowFromProtocol() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
   mainWindow.loadURL(APP_URL);
 }
@@ -467,13 +497,13 @@ if (!gotSingleInstanceLock) {
   app.quit();
 } else {
   app.on("second-instance", (_event, argv) => {
-    if (argv.some(isHighlightStudioProtocolUrl)) logApp("Protocol open requested from second instance");
+    if (findHighlightStudioProtocolUrl(argv)) logApp("Protocol open requested from second instance");
     focusMainWindowFromProtocol();
   });
 
   app.on("open-url", (event, url) => {
     event.preventDefault();
-    if (isHighlightStudioProtocolUrl(url)) {
+    if (parseHighlightStudioProtocolUrl(url)) {
       logApp(`Protocol open requested: ${url}`);
       focusMainWindowFromProtocol();
     }
