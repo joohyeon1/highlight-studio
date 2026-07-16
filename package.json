@@ -45,6 +45,7 @@
       "desktop/**/*",
       "public/**/*",
       "server.js",
+      "server/**/*",
       "package.json",
       "node_modules/**/*"
     ],
